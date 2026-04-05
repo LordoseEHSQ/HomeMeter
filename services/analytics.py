@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterable
 
 from services.i18n import translate
 from services.metric_format import format_metric_for_display
@@ -85,23 +85,48 @@ class AnalyticsEngine:
         self.formula_version = "analytics_v1"
 
     def process_cycle(self, timestamp_utc: str) -> dict[str, Any]:
-        semantic_metrics = self._build_semantic_metrics(timestamp_utc)
+        semantic_metrics = self.build_semantic_metrics(timestamp_utc)
         if semantic_metrics:
-            self.store.save_semantic_metrics(semantic_metrics)
+            self.persist_semantic_metrics(semantic_metrics)
             bucket_utc = floor_minute_bucket(timestamp_utc)
             metric_names = sorted({metric.metric_name for metric in semantic_metrics})
-            self.store.refresh_minute_rollups(bucket_utc=bucket_utc, metric_names=metric_names, device_name="system")
+            self.refresh_rollups(timestamp_utc, metric_names=metric_names)
         else:
             bucket_utc = floor_minute_bucket(timestamp_utc)
         kpi_records = self.build_kpi_records(timestamp_utc)
         if kpi_records:
-            self.store.upsert_kpi_summaries(kpi_records)
+            self.persist_kpi_records(kpi_records)
         return {
             "timestamp_utc": normalize_storage_timestamp(timestamp_utc),
             "semantic_metric_count": len(semantic_metrics),
             "rollup_bucket_utc": bucket_utc,
             "kpi_record_count": len(kpi_records),
         }
+
+    def persist_semantic_metrics(self, records: list[SemanticMetricRecord]) -> None:
+        self.store.save_semantic_metrics(records)
+
+    def refresh_rollups(self, timestamp_utc: str, metric_names: Iterable[str] | None = None) -> list[MinuteRollupRecord]:
+        names = sorted(set(metric_names or self.semantic_metric_names()))
+        return self.store.refresh_minute_rollups(
+            bucket_utc=floor_minute_bucket(timestamp_utc),
+            metric_names=names,
+            device_name="system",
+        )
+
+    def persist_kpi_records(self, records: list[KPIRecord]) -> None:
+        self.store.upsert_kpi_summaries(records)
+
+    def semantic_metric_names(self) -> list[str]:
+        return [
+            "pv_power_w",
+            "grid_import_w",
+            "grid_export_w",
+            "grid_net_power_w",
+            "wallbox_power_w",
+            "house_consumption_w",
+            "house_consumption_without_wallbox_w",
+        ]
 
     def build_dashboard(
         self,
@@ -185,6 +210,31 @@ class AnalyticsEngine:
             "refresh_seconds": int(self.settings.get("chart_refresh_seconds", 30)),
         }
 
+    def build_live_summary(self, collector_results: list[Any], *, language: str = "en") -> dict[str, Any]:
+        if not collector_results:
+            return {"timestamp_utc": None, "metric_count": 0, "items": []}
+        latest = self.build_latest_measurement_map(collector_results)
+        newest_timestamp = max((result.timestamp_utc for result in collector_results), default=None)
+        semantic_metrics = self.build_semantic_metrics(newest_timestamp or utc_timestamp_now(), latest_measurements=latest)
+        items = []
+        for record in semantic_metrics:
+            items.append(
+                {
+                    "metric_name": record.metric_name,
+                    "label": translate(f"metric.{record.metric_name}", language),
+                    "value": record.metric_value,
+                    "unit": record.unit,
+                    "classification": record.classification,
+                    "confidence_state": record.confidence_state,
+                    "source_coverage": record.source_coverage,
+                }
+            )
+        return {
+            "timestamp_utc": newest_timestamp,
+            "metric_count": len(items),
+            "items": sorted(items, key=lambda item: item["label"]),
+        }
+
     def build_kpi_records(self, timestamp_utc: str) -> list[KPIRecord]:
         now_utc = parse_utc_timestamp(timestamp_utc) or datetime.now(timezone.utc)
         records: list[KPIRecord] = []
@@ -194,17 +244,24 @@ class AnalyticsEngine:
             records.extend(metrics)
         return records
 
-    def _build_semantic_metrics(self, timestamp_utc: str) -> list[SemanticMetricRecord]:
-        latest = {
-            name: self._latest_metric(name)
-            for name in [
-                "pv_power_w",
-                "inverter_ac_power_w",
-                "grid_power_w",
-                "house_power_w",
-                "wallbox_power_w",
-            ]
-        }
+    def build_semantic_metrics(
+        self,
+        timestamp_utc: str,
+        latest_measurements: dict[str, LatestMetric] | None = None,
+    ) -> list[SemanticMetricRecord]:
+        if latest_measurements is None:
+            latest = {
+                name: self._latest_metric(name)
+                for name in [
+                    "pv_power_w",
+                    "inverter_ac_power_w",
+                    "grid_power_w",
+                    "house_power_w",
+                    "wallbox_power_w",
+                ]
+            }
+        else:
+            latest = latest_measurements
         records: list[SemanticMetricRecord] = []
 
         grid_metric = latest["grid_power_w"]
@@ -356,6 +413,20 @@ class AnalyticsEngine:
                 )
             )
         return records
+
+    def build_latest_measurement_map(self, collector_results: list[Any]) -> dict[str, LatestMetric]:
+        latest: dict[str, LatestMetric] = {}
+        for result in collector_results:
+            for measurement in result.measurements:
+                latest[measurement.metric_name] = LatestMetric(
+                    metric_name=measurement.metric_name,
+                    value=float(measurement.metric_value),
+                    unit=measurement.unit,
+                    source_type=measurement.source_type,
+                    timestamp_utc=result.timestamp_utc,
+                    device_name=result.device_name,
+                )
+        return latest
 
     def _latest_metric(self, metric_name: str) -> LatestMetric | None:
         row = self.store.get_latest_measurement_row(metric_name)
@@ -839,3 +910,7 @@ def build_chart_x_ticks(
             label = formatted[11:19] if len(formatted) >= 19 else formatted
         ticks.append({"x": round(x, 2), "label": label, "timestamp_utc": point["bucket_utc"]})
     return ticks
+
+
+def utc_timestamp_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")

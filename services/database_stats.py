@@ -12,7 +12,7 @@ class DatabaseInspector:
 
     def build_report(self) -> dict[str, Any]:
         db_path = Path(self.store.db_path)
-        table_names = ("measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries")
+        table_names = ("measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries", "cleanup_runs")
         table_stats = {name: self.store.get_table_stats(name) for name in table_names}
         return {
             "db_path": str(db_path.resolve()),
@@ -26,6 +26,7 @@ class DatabaseInspector:
                 "semantic_metrics": self.store.get_latest_rows("semantic_metrics", limit=10),
                 "minute_rollups": self.store.get_latest_rows("minute_rollups", limit=10),
                 "kpi_summaries": self.store.get_latest_rows("kpi_summaries", limit=10),
+                "cleanup_runs": self.store.get_latest_rows("cleanup_runs", limit=10),
             },
             "storage_activity": self._build_activity_summary(table_stats),
             "device_measurement_presence": {
@@ -40,6 +41,7 @@ class DatabaseInspector:
                 "kostal": self.store.get_recording_summary("kostal"),
             },
             "analytics_status": self.store.get_analytics_status(),
+            "cleanup_runs": self.store.get_recent_cleanup_runs(limit=20),
         }
 
     def _build_activity_summary(self, table_stats: dict[str, dict[str, Any]]) -> dict[str, Any]:

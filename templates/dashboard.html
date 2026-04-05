@@ -4,7 +4,7 @@
     <div class="hero-copy">
         <p class="eyebrow">System Overview</p>
         <h2>Operational health at a glance</h2>
-        <p class="muted">Use this page to decide quickly whether the app, collectors, data flow and storage pipeline are trustworthy enough for deeper energy analysis.</p>
+        <p class="muted">Use the dashboard for quick decisions only: current system health, recent risks, live data trust, and where to drill down next.</p>
     </div>
     <div class="hero-status">
         <span class="badge status-{{ system_health.status }}">{{ system_health.status }}</span>
@@ -19,21 +19,90 @@
 </section>
 
 <section class="stats-grid">
-    {% for device in device_operations %}
     <article class="stat-card">
-        <p class="eyebrow">{{ device.name }} / {{ device.device_type }}</p>
-        <h3>{{ device.collector_status.replace('_', ' ') }}</h3>
-        <p class="muted">{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</p>
-        <p class="tiny">Last success: {{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'none' }}</p>
+        <p class="eyebrow">Devices</p>
+        <h3>{{ device_operations|length }}</h3>
+        <p class="muted">{{ system_health.unhealthy_device_count }} unhealthy / {{ (device_operations|length) - system_health.unhealthy_device_count }} stable</p>
+        <p class="tiny">Detailed collector state belongs on Devices and device detail pages.</p>
     </article>
-    {% endfor %}
+    <article class="stat-card">
+        <p class="eyebrow">Current priorities</p>
+        <h3>{{ integration_gaps|length + system_health.high_alert_count }}</h3>
+        <p class="muted">Open warnings, gaps, and high-severity alerts</p>
+        <p class="tiny">System status is the primary home for full operational detail.</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">Data pipeline</p>
+        <h3>{{ system_health.storage_status }}</h3>
+        <p class="muted">Storage health and write trust are summarized here for fast triage.</p>
+        <p class="tiny">Raw, derived, and rollup timing are summarized below.</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">Analytics coverage</p>
+        <h3>{{ analytics.coverage_badge }}</h3>
+        <p class="muted">{{ analytics.coverage_message }}</p>
+        <p class="tiny">Detailed trends and KPI confidence live on Analytics.</p>
+    </article>
 </section>
 
 <section class="panel">
-    <div class="section-head">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">What matters now</p>
+            <h2>Current priorities and next checks</h2>
+            <p class="muted">This summary intentionally stays short. Use it to decide whether to open System, Devices, Alerts, or Analytics next.</p>
+        </div>
+        <div class="toolbar-actions">
+            <a class="button" href="{{ url_for('web.system_status') }}">Open system health</a>
+            <a class="button" href="{{ url_for('web.settings_devices') }}">Open devices</a>
+            <a class="button" href="{{ url_for('web.analytics') }}">Open analytics</a>
+        </div>
+    </div>
+    {% if integration_gaps or dashboard.recent_alerts %}
+    <ul class="compact-list">
+        {% for gap in integration_gaps[:4] %}
+        <li><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span> <strong>{{ gap.device_name }}</strong>: {{ gap.message }}</li>
+        {% endfor %}
+        {% for alert in dashboard.recent_alerts[:3] %}
+        <li><span class="badge severity-{{ alert.severity }}">{{ alert.severity }}</span> <strong>{{ alert.device_name }}</strong>: {{ alert.message }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No urgent warnings, failures, or integration gaps are currently highlighted.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">Runtime Timing</p>
+            <h2>Timing summary only</h2>
+            <p class="muted">The dashboard only shows the current rhythm. Detailed timing, cleanup, and runtime hygiene live under System and Settings / Time.</p>
+        </div>
+        <div class="toolbar-actions">
+            <a class="button" href="{{ url_for('web.settings_time') }}">Open timing settings</a>
+            <a class="button" href="{{ url_for('web.system_status') }}">Open system details</a>
+        </div>
+    </div>
+    <dl class="analytics-meta-grid">
+        <div><dt>Analytics refresh</dt><dd>{{ runtime_timing.analytics_refresh_interval_seconds }} s</dd></div>
+        <div><dt>Polling</dt><dd>{{ runtime_timing.poll_interval_seconds }} s</dd></div>
+        <div><dt>Raw write</dt><dd>{{ runtime_timing.raw_write_interval_seconds }} s</dd></div>
+        <div><dt>Derived write</dt><dd>{{ runtime_timing.derived_write_interval_seconds }} s</dd></div>
+        <div><dt>Rollup</dt><dd>{{ runtime_timing.rollup_interval_seconds }} s</dd></div>
+        <div><dt>Last successful poll</dt><dd>{{ runtime_timing.last_successful_poll_utc|format_ts_detail if runtime_timing.last_successful_poll_utc else 'none yet' }}</dd></div>
+        <div><dt>Last raw write</dt><dd>{{ runtime_timing.last_successful_raw_write_utc|format_ts_detail if runtime_timing.last_successful_raw_write_utc else 'none yet' }}</dd></div>
+        <div><dt>Last derived write</dt><dd>{{ runtime_timing.last_successful_derived_write_utc|format_ts_detail if runtime_timing.last_successful_derived_write_utc else 'none yet' }}</dd></div>
+        <div><dt>Last rollup</dt><dd>{{ runtime_timing.last_successful_rollup_utc|format_ts_detail if runtime_timing.last_successful_rollup_utc else 'none yet' }}</dd></div>
+    </dl>
+</section>
+
+<section class="panel">
+    <div class="section-head section-head-wrap">
         <div>
             <p class="eyebrow">Analytics</p>
             <h2>Persisted KPI snapshot</h2>
+            <p class="muted">This is the business-facing summary only. Trends, time windows, and confidence details belong on the dedicated Analytics page.</p>
         </div>
         <a href="{{ url_for('web.analytics') }}">Open KPI dashboard</a>
     </div>
@@ -57,128 +126,59 @@
 </section>
 
 <section class="panel">
-    <div class="section-head">
-        <h2>Devices</h2>
-        <a href="{{ url_for('web.settings') }}">Open operations view</a>
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">Devices</p>
+            <h2>Short device summary</h2>
+            <p class="muted">The dashboard only shows where to look next. Mapping depth, auth state, raw payloads, and protocol details live on the device pages and in Settings / Devices.</p>
+        </div>
+        <div class="toolbar-actions">
+            <a class="button" href="{{ url_for('web.settings_devices') }}">Open devices</a>
+            <a class="button" href="{{ url_for('web.settings') }}">Open settings</a>
+        </div>
     </div>
-    <div class="device-grid">
-        {% for device in device_operations %}
-        <article class="device-card">
-            <div class="device-card-header">
-                <h3><a href="{{ url_for('web.device_detail', device_name=device.name) }}">{{ device.name }}</a></h3>
-                <span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span>
-            </div>
-            <dl class="meta-grid">
-                <dt>Enabled</dt>
-                <dd>{{ 'yes' if device.enabled else 'no' }}</dd>
-                <dt>Host</dt>
-                <dd>{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</dd>
-                <dt>Type</dt>
-                <dd>{{ device.device_type }}</dd>
-                <dt>Protocols</dt>
-                <dd>{{ device.protocol_summary }}</dd>
-                <dt>Last poll</dt>
-                <dd>{{ device.last_poll.timestamp_utc|format_ts if device.last_poll else 'No polls yet' }}</dd>
-                <dt>Last success</dt>
-                <dd>{{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'None' }}</dd>
-                <dt>Last data read</dt>
-                <dd>{{ device.last_successful_data_read|format_ts if device.last_successful_data_read else 'none' }}</dd>
-                <dt>Response time</dt>
-                <dd>{{ device.response_time_ms ~ ' ms' if device.response_time_ms is not none else 'n/a' }}</dd>
-                <dt>Auth</dt>
-                <dd>{{ device.auth_summary.config_state }} / {{ device.auth_summary.state }}</dd>
-                {% if device.name == 'cfos' %}
-                <dt>Cred source</dt>
-                <dd>{{ device.auth_summary.credentials_source }}</dd>
-                {% endif %}
-                <dt>Settings support</dt>
-                <dd>{{ device.settings_read_support_state }}</dd>
-                <dt>Measurement support</dt>
-                <dd>{{ device.measurement_read_support_state }}</dd>
-                <dt>Recording</dt>
-                <dd>{{ device.recording_summary.status }}</dd>
-                <dt>Raw payload</dt>
-                <dd>{{ 'available' if device.raw_payload_available else 'none yet' }}</dd>
-                <dt>Metrics</dt>
-                <dd>{{ device.normalized_metrics_count }}</dd>
-                <dt>Last error</dt>
-                <dd>{{ device.last_error or 'None' }}</dd>
-                {% if device.integration_context and device.integration_context.transport_mode != 'unknown' %}
-                <dt>Integration</dt>
-                <dd>{{ device.integration_context.transport_mode }}</dd>
-                <dt>Primary ID</dt>
-                <dd>{{ device.integration_context.charger_id or device.integration_context.cfos_address or 'n/a' }}</dd>
-                <dt>Local IP role</dt>
-                <dd>{{ device.integration_context.local_ip_role }}</dd>
-                {% endif %}
-            </dl>
-            {% set dashboard_device = (dashboard.devices | selectattr('name', 'equalto', device.name) | list | first) %}
-            <h4>Latest values</h4>
-            {% if dashboard_device and dashboard_device.latest_measurements %}
-            <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Value</th>
-                        <th>Unit</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for measurement in dashboard_device.latest_measurements %}
-                    <tr>
-                        <td>{{ measurement.metric_name }}</td>
-                        <td>{{ (measurement.metric_value, measurement.unit)|format_metric_number }}</td>
-                        <td>{{ (measurement.metric_value, measurement.unit)|format_metric_unit }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            </div>
-            {% else %}
-            <p class="muted">No normalized measurements stored yet.</p>
-            {% endif %}
-            {% if device.auth_summary.security_warning %}
-            <p class="tiny">{{ device.auth_summary.security_warning }}</p>
-            {% endif %}
-            {% if device.integration_context and device.integration_context.cloud_auth_error %}
-            <p class="tiny">Easee cloud auth: {{ device.integration_context.cloud_auth_state }} ({{ device.integration_context.cloud_auth_error }})</p>
-            {% endif %}
-            <p class="tiny">{{ device.recording_summary.message }}</p>
-            <p class="tiny">{{ device.mapping_note }}</p>
-        </article>
-        {% endfor %}
-    </div>
-</section>
-
-<section class="panel">
-    <h2>Integration Gaps And Opportunities</h2>
-    {% if integration_gaps %}
     <div class="table-wrap">
     <table>
         <thead>
             <tr>
                 <th>Device</th>
-                <th>Category</th>
-                <th>Severity</th>
-                <th>Message</th>
+                <th>Status</th>
+                <th>Last success</th>
+                <th>Recording</th>
+                <th>Latest values</th>
+                <th>Next step</th>
             </tr>
         </thead>
         <tbody>
-            {% for gap in integration_gaps %}
+        {% for device in device_operations %}
+            {% set dashboard_device = (dashboard.devices | selectattr('name', 'equalto', device.name) | list | first) %}
             <tr>
-                <td>{{ gap.device_name }}</td>
-                <td>{{ gap.gap_type }}</td>
-                <td><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span></td>
-                <td>{{ gap.message }}</td>
+                <td>
+                    <strong><a href="{{ url_for('web.device_detail', device_name=device.name) }}">{{ device.name }}</a></strong>
+                    <div class="tiny">{{ device.device_type }} / {{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</div>
+                </td>
+                <td><span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span></td>
+                <td>{{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'none yet' }}</td>
+                <td>
+                    <span class="badge status-{{ device.recording_summary.status }}">{{ device.recording_summary.status }}</span>
+                    <div class="tiny">{{ device.recording_summary.message }}</div>
+                </td>
+                <td>
+                    {% if dashboard_device and dashboard_device.latest_measurements %}
+                    {{ dashboard_device.latest_measurements|length }} current values
+                    {% else %}
+                    no stored values yet
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('web.device_detail', device_name=device.name) }}">Open device</a>
+                    <div class="tiny">{{ device.mapping_note }}</div>
+                </td>
             </tr>
-            {% endfor %}
+        {% endfor %}
         </tbody>
     </table>
     </div>
-    {% else %}
-    <p class="muted">No integration gaps detected right now.</p>
-    {% endif %}
 </section>
 
 <section class="panel">

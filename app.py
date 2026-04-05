@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 import threading
 import time
 from pathlib import Path
@@ -24,12 +25,40 @@ from services.gap_detection import build_integration_gaps
 from services.health import SystemHealthService
 from services.i18n import DEFAULT_LANGUAGE, resolve_language, translate
 from services.metric_format import format_metric_for_display
+from services.runtime_timing import RuntimeTimingCoordinator, build_timing_baseline, load_runtime_timing_settings
 from services.time_monitor import TimeMonitor
 from services.time_utils import format_cell_value, format_timestamp_for_display, load_time_settings
 from storage import SQLiteStore
 from web import register_routes
 
 LOGGER = logging.getLogger(__name__)
+
+
+def build_runtime_hygiene(host: str, port: int) -> dict[str, Any]:
+    resolved_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    port_in_use = False
+    check_error = None
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.2)
+            port_in_use = sock.connect_ex((resolved_host, port)) == 0
+    except OSError as exc:
+        check_error = str(exc)
+    warning = None
+    if port_in_use:
+        warning = (
+            f"Configured port {port} on {resolved_host} already appears to be in use. "
+            "A stale local Python/Flask process may still be listening."
+        )
+    return {
+        "host": host,
+        "resolved_host": resolved_host,
+        "port": port,
+        "port_in_use": port_in_use,
+        "port_conflict_warning": warning,
+        "check_error": check_error,
+        "process_hygiene_note": "This is a lightweight port check only. HomeMeter does not manage or terminate OS processes automatically.",
+    }
 
 
 class PollingManager:
@@ -39,15 +68,17 @@ class PollingManager:
         store: SQLiteStore,
         plausibility_engine: PlausibilityEngine,
         analytics_engine: AnalyticsEngine,
-        interval_seconds: int,
+        timing_coordinator: RuntimeTimingCoordinator,
     ) -> None:
         self.collectors = collectors
         self.store = store
         self.plausibility_engine = plausibility_engine
         self.analytics_engine = analytics_engine
-        self.interval_seconds = interval_seconds
+        self.timing_coordinator = timing_coordinator
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._latest_live_summary: dict[str, Any] = {"timestamp_utc": None, "metric_count": 0, "items": []}
+        self._last_cleanup_summary: dict[str, Any] = {"measurements_deleted": 0, "poll_events_deleted": 0, "minute_rollups_deleted": 0}
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -65,18 +96,19 @@ class PollingManager:
             cycle_started = time.time()
             self.run_cycle_once()
             elapsed = time.time() - cycle_started
-            sleep_for = max(1.0, self.interval_seconds - elapsed)
+            sleep_for = max(1.0, self.timing_coordinator.settings.poll_interval_seconds - elapsed)
             self._stop_event.wait(sleep_for)
 
     def run_cycle_once(self) -> list[Any]:
         alerts: list[Any] = []
         device_names = [collector.device_name for collector in self.collectors]
         cycle_timestamp: str | None = None
+        collector_results: list[Any] = []
         for collector in self.collectors:
             LOGGER.info("Polling device %s", collector.device_name)
             result = collector.collect()
             cycle_timestamp = result.timestamp_utc
-            self.store.save_collector_result(result)
+            collector_results.append(result)
             if result.success:
                 LOGGER.info(
                     "Poll success for %s (%s, %sms, metrics=%s)",
@@ -93,15 +125,71 @@ class PollingManager:
                     result.http_status,
                     result.error_message,
                 )
-        analytics_result: dict[str, Any] | None = None
         if cycle_timestamp:
-            analytics_result = self.analytics_engine.process_cycle(cycle_timestamp)
-            LOGGER.info(
-                "Analytics persistence updated (semantic=%s, kpis=%s, bucket=%s)",
-                analytics_result["semantic_metric_count"],
-                analytics_result["kpi_record_count"],
-                analytics_result["rollup_bucket_utc"],
+            plan = self.timing_coordinator.plan_cycle(cycle_timestamp)
+            raw_write_due = plan["raw_write_due"]
+            raw_writes_succeeded = False
+            for result in collector_results:
+                self.store.save_collector_result(
+                    result,
+                    include_measurements=raw_write_due and result.success,
+                    include_raw_payload=raw_write_due and bool(result.raw_payload),
+                )
+                raw_writes_succeeded = raw_writes_succeeded or bool(raw_write_due and result.success and result.measurements)
+            poll_success = any(result.success for result in collector_results)
+            self.timing_coordinator.mark_poll(
+                cycle_timestamp,
+                success=poll_success,
+                error=None if poll_success else "All device polls failed in the last cycle.",
             )
+            if raw_write_due:
+                self.timing_coordinator.mark_raw_write(
+                    cycle_timestamp,
+                    success=raw_writes_succeeded,
+                    error=None if raw_writes_succeeded else "No successful raw measurement writes were produced in the cycle.",
+                )
+
+            self._latest_live_summary = self.analytics_engine.build_live_summary(
+                collector_results,
+                language="en",
+            )
+
+            if plan["derived_write_due"]:
+                semantic_metrics = self.analytics_engine.build_semantic_metrics(
+                    cycle_timestamp,
+                    latest_measurements=self.analytics_engine.build_latest_measurement_map(collector_results),
+                )
+                if semantic_metrics:
+                    self.analytics_engine.persist_semantic_metrics(semantic_metrics)
+                    self.timing_coordinator.mark_derived_write(cycle_timestamp, success=True)
+                else:
+                    self.timing_coordinator.mark_derived_write(cycle_timestamp, success=False, error="No semantic metrics were derived in the cycle.")
+            if plan["rollup_due"]:
+                rollups = self.analytics_engine.refresh_rollups(cycle_timestamp)
+                kpi_records = self.analytics_engine.build_kpi_records(cycle_timestamp)
+                if kpi_records:
+                    self.analytics_engine.persist_kpi_records(kpi_records)
+                self.timing_coordinator.mark_rollup(
+                    cycle_timestamp,
+                    success=bool(rollups or kpi_records),
+                    error=None if (rollups or kpi_records) else "No rollups or KPI summaries were updated in the cycle.",
+                )
+            if plan["cleanup_due"]:
+                try:
+                    self._last_cleanup_summary = self.store.cleanup_old_data(
+                        retention_days_raw=self.timing_coordinator.settings.retention_days_raw,
+                        retention_days_rollup=self.timing_coordinator.settings.retention_days_rollup,
+                    )
+                    self.timing_coordinator.mark_cleanup(cycle_timestamp, success=True)
+                    LOGGER.info(
+                        "Retention cleanup completed (measurements=%s, poll_events=%s, rollups=%s)",
+                        self._last_cleanup_summary["measurements_deleted"],
+                        self._last_cleanup_summary["poll_events_deleted"],
+                        self._last_cleanup_summary["minute_rollups_deleted"],
+                    )
+                except Exception as exc:
+                    self.timing_coordinator.mark_cleanup(cycle_timestamp, success=False, error=str(exc))
+                    LOGGER.warning("Retention cleanup failed: %s", exc)
         if device_names and cycle_timestamp:
             alerts = self.plausibility_engine.run(
                 device_names=device_names,
@@ -121,13 +209,31 @@ class PollingManager:
             if collector.device_name != device_name:
                 continue
             result = collector.collect()
-            self.store.save_collector_result(result)
+            self.store.save_collector_result(result, include_measurements=True, include_raw_payload=True)
             return result
         return None
 
-    def replace_collectors(self, collectors: list[BaseCollector], interval_seconds: int) -> None:
+    def replace_collectors(self, collectors: list[BaseCollector], timing_coordinator: RuntimeTimingCoordinator) -> None:
         self.collectors = collectors
-        self.interval_seconds = interval_seconds
+        self.timing_coordinator = timing_coordinator
+
+    def get_live_summary(self, language: str = "en") -> dict[str, Any]:
+        summary = dict(self._latest_live_summary)
+        if not summary.get("items"):
+            return summary
+        summary["items"] = [
+            {
+                **item,
+                "label": translate(f"metric.{item['metric_name']}", language),
+            }
+            for item in self._latest_live_summary["items"]
+        ]
+        return summary
+
+    def get_timing_status(self) -> dict[str, Any]:
+        status = self.timing_coordinator.get_status()
+        status["last_cleanup_summary"] = dict(self._last_cleanup_summary)
+        return status
 
 
 def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -199,10 +305,13 @@ def sanitize_config(value: Any) -> Any:
 
 def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> Flask:
     config = load_config(config_path)
+    app_config = config.get("app", {}) or {}
     storage_config = config.get("storage", {}) or {}
     polling_config = config.get("polling", {}) or {}
     time_settings = load_time_settings(config)
     analytics_settings = config.get("analytics", {}) or {}
+    runtime_timing_settings = load_runtime_timing_settings(config)
+    runtime_hygiene = build_runtime_hygiene(str(app_config.get("host", "127.0.0.1")), int(app_config.get("port", 5000)))
 
     logging.basicConfig(
         level=logging.INFO,
@@ -222,12 +331,13 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
 
     plausibility_engine = PlausibilityEngine(store=store)
     analytics_engine = AnalyticsEngine(store=store, settings=analytics_settings)
+    timing_coordinator = RuntimeTimingCoordinator(runtime_timing_settings, baseline=build_timing_baseline(store))
     polling_manager = PollingManager(
         collectors=collectors,
         store=store,
         plausibility_engine=plausibility_engine,
         analytics_engine=analytics_engine,
-        interval_seconds=int(polling_config.get("interval_seconds", 10)),
+        timing_coordinator=timing_coordinator,
     )
     config_validator = ConfigValidator()
     db_inspector = DatabaseInspector(store)
@@ -247,10 +357,12 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
     app.config["HEALTH_SERVICE"] = health_service
     app.config["TIME_SETTINGS"] = time_settings
     app.config["ANALYTICS_SETTINGS"] = analytics_settings
+    app.config["RUNTIME_TIMING_SETTINGS"] = runtime_timing_settings
     app.config["ANALYTICS_SERVICE"] = analytics_engine
     app.config["TIME_MONITOR"] = time_monitor
     app.config["CFOS_PROTOCOL_DIAGNOSTICS"] = cfos_protocol_diagnostics
     app.config["SANITIZE_CONFIG"] = sanitize_config
+    app.config["RUNTIME_HYGIENE"] = runtime_hygiene
 
     @app.template_filter("format_ts")
     def format_ts_filter(value: str | None) -> str:
@@ -293,15 +405,14 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
         app.config["CONFIG"] = fresh_config
         app.config["TIME_SETTINGS"] = load_time_settings(fresh_config)
         app.config["ANALYTICS_SETTINGS"] = fresh_config.get("analytics", {}) or {}
+        app.config["RUNTIME_TIMING_SETTINGS"] = load_runtime_timing_settings(fresh_config)
         app.config["TIME_MONITOR"] = TimeMonitor(app.config["TIME_SETTINGS"])
         app.config["CFOS_PROTOCOL_DIAGNOSTICS"] = CfosProtocolDiagnostics()
         app.config["ANALYTICS_SERVICE"] = AnalyticsEngine(store=store, settings=app.config["ANALYTICS_SETTINGS"])
+        fresh_timing = RuntimeTimingCoordinator(app.config["RUNTIME_TIMING_SETTINGS"], baseline=build_timing_baseline(store))
         refreshed_collectors = create_collectors(fresh_config)
         app.config["DEVICE_NAMES"] = [collector.device_name for collector in refreshed_collectors]
-        app.config["POLLING_MANAGER"].replace_collectors(
-            refreshed_collectors,
-            int((fresh_config.get("polling", {}) or {}).get("interval_seconds", 10)),
-        )
+        app.config["POLLING_MANAGER"].replace_collectors(refreshed_collectors, fresh_timing)
         app.config["POLLING_MANAGER"].analytics_engine = app.config["ANALYTICS_SERVICE"]
         return fresh_config
 

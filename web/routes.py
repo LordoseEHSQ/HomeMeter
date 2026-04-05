@@ -26,18 +26,25 @@ def register_routes(app) -> None:
         )
         dashboard_data = store.get_dashboard_data(current_app.config["DEVICE_NAMES"])
         integration_gaps = build_integration_gaps(store, device_operations, device_specs)
+        analytics_view = current_app.config["ANALYTICS_SERVICE"].build_dashboard(
+            current_app.config["ANALYTICS_SETTINGS"].get("default_window", "24h"),
+            language=current_language,
+            time_settings=current_app.config["TIME_SETTINGS"],
+        )
+        analytics_view["refresh_seconds"] = (
+            current_app.config["RUNTIME_TIMING_SETTINGS"].analytics_refresh_interval_seconds
+            if current_app.config["RUNTIME_TIMING_SETTINGS"].live_refresh_enabled
+            else 0
+        )
         return render_template(
             "dashboard.html",
             dashboard=dashboard_data,
             system_health=system_health,
             device_operations=device_operations,
             integration_gaps=integration_gaps,
-            analytics=current_app.config["ANALYTICS_SERVICE"].build_dashboard(
-                current_app.config["ANALYTICS_SETTINGS"].get("default_window", "24h"),
-                language=current_language,
-                time_settings=current_app.config["TIME_SETTINGS"],
-            ),
+            analytics=analytics_view,
             time_settings=current_app.config["TIME_SETTINGS"],
+            runtime_timing=current_app.config["POLLING_MANAGER"].get_timing_status(),
         )
 
     @blueprint.route("/analytics")
@@ -49,10 +56,17 @@ def register_routes(app) -> None:
             language=current_language,
             time_settings=current_app.config["TIME_SETTINGS"],
         )
+        analytics_view["refresh_seconds"] = (
+            current_app.config["RUNTIME_TIMING_SETTINGS"].analytics_refresh_interval_seconds
+            if current_app.config["RUNTIME_TIMING_SETTINGS"].live_refresh_enabled
+            else 0
+        )
         return render_template(
             "analytics.html",
             analytics=analytics_view,
             time_settings=current_app.config["TIME_SETTINGS"],
+            live_summary=current_app.config["POLLING_MANAGER"].get_live_summary(current_language),
+            timing_status=current_app.config["POLLING_MANAGER"].get_timing_status(),
         )
 
     @blueprint.route("/analytics/partial")
@@ -64,10 +78,17 @@ def register_routes(app) -> None:
             language=current_language,
             time_settings=current_app.config["TIME_SETTINGS"],
         )
+        analytics_view["refresh_seconds"] = (
+            current_app.config["RUNTIME_TIMING_SETTINGS"].analytics_refresh_interval_seconds
+            if current_app.config["RUNTIME_TIMING_SETTINGS"].live_refresh_enabled
+            else 0
+        )
         return render_template(
             "partials/analytics_live.html",
             analytics=analytics_view,
             time_settings=current_app.config["TIME_SETTINGS"],
+            live_summary=current_app.config["POLLING_MANAGER"].get_live_summary(current_language),
+            timing_status=current_app.config["POLLING_MANAGER"].get_timing_status(),
         )
 
     @blueprint.route("/devices/<device_name>")
@@ -105,25 +126,15 @@ def register_routes(app) -> None:
 
     @blueprint.route("/settings")
     def settings():
-        store = current_app.config["STORE"]
         validation_result = current_app.config["BUILD_VALIDATION_RESULT"]()
-        device_specs = current_app.config["BUILD_DEVICE_SPECS"]()
-        device_operations = current_app.config["BUILD_DEVICE_OPERATIONS"](validation_result, device_specs)
-        integration_gaps = build_integration_gaps(store, device_operations, device_specs)
         config_data = current_app.config["SANITIZE_CONFIG"](current_app.config["CONFIG"])
         return render_template(
             "settings.html",
-            device_operations=device_operations,
             config_validation=validation_result,
             config_data=config_data,
             time_settings=current_app.config["TIME_SETTINGS"],
-            time_status=current_app.config["TIME_MONITOR"].get_status(),
-            device_specs=device_specs,
-            cfos_protocol_statuses=current_app.config["CFOS_PROTOCOL_DIAGNOSTICS"].describe(
-                (current_app.config["CONFIG"].get("devices", {}) or {}).get("cfos", {}) or {},
-                current_app.config["STORE"],
-            ),
-            integration_gaps=integration_gaps,
+            runtime_timing=current_app.config["RUNTIME_TIMING_SETTINGS"],
+            timing_status=current_app.config["POLLING_MANAGER"].get_timing_status(),
         )
 
     @blueprint.route("/system")
@@ -147,6 +158,9 @@ def register_routes(app) -> None:
             config_validation=validation_result,
             time_settings=current_app.config["TIME_SETTINGS"],
             time_status=current_app.config["TIME_MONITOR"].get_status(),
+            runtime_timing=current_app.config["RUNTIME_TIMING_SETTINGS"],
+            timing_status=current_app.config["POLLING_MANAGER"].get_timing_status(),
+            runtime_hygiene=current_app.config["RUNTIME_HYGIENE"],
             integration_gaps=integration_gaps,
         )
 
@@ -171,7 +185,22 @@ def register_routes(app) -> None:
 
     @blueprint.route("/settings/devices")
     def settings_devices():
-        return settings()
+        store = current_app.config["STORE"]
+        validation_result = current_app.config["BUILD_VALIDATION_RESULT"]()
+        device_specs = current_app.config["BUILD_DEVICE_SPECS"]()
+        device_operations = current_app.config["BUILD_DEVICE_OPERATIONS"](validation_result, device_specs)
+        integration_gaps = build_integration_gaps(store, device_operations, device_specs)
+        return render_template(
+            "settings_devices.html",
+            device_operations=device_operations,
+            config_validation=validation_result,
+            time_settings=current_app.config["TIME_SETTINGS"],
+            cfos_protocol_statuses=current_app.config["CFOS_PROTOCOL_DIAGNOSTICS"].describe(
+                (current_app.config["CONFIG"].get("devices", {}) or {}).get("cfos", {}) or {},
+                current_app.config["STORE"],
+            ),
+            integration_gaps=integration_gaps,
+        )
 
     @blueprint.route("/settings/database")
     def settings_database():
@@ -189,6 +218,9 @@ def register_routes(app) -> None:
             time_settings=current_app.config["TIME_SETTINGS"],
             time_status=current_app.config["TIME_MONITOR"].get_status(),
             config_validation=validation_result,
+            runtime_timing=current_app.config["RUNTIME_TIMING_SETTINGS"],
+            timing_status=current_app.config["POLLING_MANAGER"].get_timing_status(),
+            cleanup_runs=current_app.config["STORE"].get_recent_cleanup_runs(limit=20),
         )
 
     @blueprint.post("/actions/reload-config")

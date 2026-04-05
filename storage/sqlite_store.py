@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from collectors.base import CollectorResult, MeasurementRecord
-from services.time_utils import normalize_storage_timestamp, parse_utc_timestamp
+from services.time_utils import normalize_storage_timestamp, parse_utc_timestamp, utc_now_storage
 
 
 @dataclass(slots=True)
@@ -59,6 +60,16 @@ class KPIRecord:
     confidence_state: str
     updated_at_utc: str
     details: dict[str, Any]
+
+
+@dataclass(slots=True)
+class CleanupRunRecord:
+    timestamp_utc: str
+    success: bool
+    cleanup_scope: str
+    deleted_row_count: int
+    duration_ms: int
+    error_message: str | None
 
 
 class SQLiteStore:
@@ -149,6 +160,15 @@ class SQLiteStore:
                     updated_at_utc TEXT NOT NULL,
                     details_json TEXT
                 );
+                CREATE TABLE IF NOT EXISTS cleanup_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_utc TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    cleanup_scope TEXT NOT NULL,
+                    deleted_row_count INTEGER NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    error_message TEXT
+                );
                 CREATE INDEX IF NOT EXISTS idx_measurements_device_time
                 ON measurements (device_name, timestamp_utc DESC);
                 CREATE INDEX IF NOT EXISTS idx_measurements_metric_time
@@ -167,12 +187,22 @@ class SQLiteStore:
                 ON minute_rollups (device_name, bucket_utc DESC);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_kpi_summaries_window_metric
                 ON kpi_summaries (window_key, metric_name);
+                CREATE INDEX IF NOT EXISTS idx_cleanup_runs_time
+                ON cleanup_runs (timestamp_utc DESC);
+                CREATE INDEX IF NOT EXISTS idx_cleanup_runs_scope_time
+                ON cleanup_runs (cleanup_scope, timestamp_utc DESC);
                 """
             )
             self._ensure_column(connection, "poll_events", "details_json", "TEXT")
             connection.commit()
 
-    def save_collector_result(self, result: CollectorResult) -> None:
+    def save_collector_result(
+        self,
+        result: CollectorResult,
+        *,
+        include_measurements: bool = True,
+        include_raw_payload: bool = True,
+    ) -> None:
         with self._lock, self._managed_connection() as connection:
             cursor = connection.cursor()
             cursor.execute(
@@ -190,17 +220,18 @@ class SQLiteStore:
                     result.http_status,
                     result.error_message,
                     result.status.value,
-                    result.raw_payload,
+                    result.raw_payload if include_raw_payload else None,
                     json.dumps(result.details or {}),
                 ),
             )
-            for measurement in result.measurements:
-                self._insert_measurement(
-                    cursor,
-                    normalize_storage_timestamp(result.timestamp_utc) or result.timestamp_utc,
-                    result.device_name,
-                    measurement,
-                )
+            if include_measurements:
+                for measurement in result.measurements:
+                    self._insert_measurement(
+                        cursor,
+                        normalize_storage_timestamp(result.timestamp_utc) or result.timestamp_utc,
+                        result.device_name,
+                        measurement,
+                    )
             connection.commit()
 
     def save_alert(
@@ -496,17 +527,27 @@ class SQLiteStore:
             ).fetchone()
         return int(row["row_count"]) if row else 0
 
-    def get_last_measurement_timestamp(self, device_name: str) -> str | None:
+    def get_last_measurement_timestamp(self, device_name: str | None = None) -> str | None:
+        query = """
+            SELECT MAX(timestamp_utc) AS latest_measurement_ts
+            FROM measurements
+        """
+        params: list[Any] = []
+        if device_name:
+            query += " WHERE device_name = ?"
+            params.append(device_name)
         with self._managed_connection() as connection:
-            row = connection.execute(
-                """
-                SELECT MAX(timestamp_utc) AS latest_measurement_ts
-                FROM measurements
-                WHERE device_name = ?
-                """,
-                (device_name,),
-            ).fetchone()
+            row = connection.execute(query, params).fetchone()
         return row["latest_measurement_ts"] if row and row["latest_measurement_ts"] else None
+
+    def get_latest_poll_timestamp(self, *, success_only: bool = False) -> str | None:
+        query = "SELECT MAX(timestamp_utc) AS latest_poll_ts FROM poll_events"
+        params: list[Any] = []
+        if success_only:
+            query += " WHERE success = 1"
+        with self._managed_connection() as connection:
+            row = connection.execute(query, params).fetchone()
+        return row["latest_poll_ts"] if row and row["latest_poll_ts"] else None
 
     def has_raw_payload(self, device_name: str) -> bool:
         with self._managed_connection() as connection:
@@ -693,25 +734,92 @@ class SQLiteStore:
             latest_semantic = connection.execute("SELECT MAX(timestamp_utc) AS ts FROM semantic_metrics").fetchone()
             latest_rollup = connection.execute("SELECT MAX(updated_at_utc) AS ts FROM minute_rollups").fetchone()
             latest_kpi = connection.execute("SELECT MAX(updated_at_utc) AS ts FROM kpi_summaries").fetchone()
+            latest_cleanup = connection.execute("SELECT MAX(timestamp_utc) AS ts FROM cleanup_runs WHERE success = 1").fetchone()
             semantic_count = connection.execute("SELECT COUNT(*) AS row_count FROM semantic_metrics").fetchone()
             rollup_count = connection.execute("SELECT COUNT(*) AS row_count FROM minute_rollups").fetchone()
             kpi_count = connection.execute("SELECT COUNT(*) AS row_count FROM kpi_summaries").fetchone()
+            cleanup_count = connection.execute("SELECT COUNT(*) AS row_count FROM cleanup_runs").fetchone()
         return {
             "latest_raw_measurement_utc": latest_measurement["ts"] if latest_measurement else None,
             "latest_semantic_metric_utc": latest_semantic["ts"] if latest_semantic else None,
             "latest_rollup_utc": latest_rollup["ts"] if latest_rollup else None,
             "latest_kpi_summary_utc": latest_kpi["ts"] if latest_kpi else None,
+            "latest_cleanup_utc": latest_cleanup["ts"] if latest_cleanup else None,
             "semantic_metric_count": int(semantic_count["row_count"]) if semantic_count else 0,
             "rollup_count": int(rollup_count["row_count"]) if rollup_count else 0,
             "kpi_summary_count": int(kpi_count["row_count"]) if kpi_count else 0,
+            "cleanup_run_count": int(cleanup_count["row_count"]) if cleanup_count else 0,
         }
 
+    def cleanup_old_data(self, *, retention_days_raw: int, retention_days_rollup: int) -> dict[str, int]:
+        now_utc = datetime.now(timezone.utc)
+        raw_cutoff = normalize_storage_timestamp(now_utc - timedelta(days=retention_days_raw)) or utc_now_storage()
+        rollup_cutoff = normalize_storage_timestamp(now_utc - timedelta(days=retention_days_rollup)) or utc_now_storage()
+        run_timestamp = utc_now_storage()
+        cleanup_plan = [
+            ("measurements", "DELETE FROM measurements WHERE timestamp_utc < ?", raw_cutoff),
+            ("poll_events", "DELETE FROM poll_events WHERE timestamp_utc < ?", raw_cutoff),
+            ("alerts", "DELETE FROM alerts WHERE timestamp_utc < ?", raw_cutoff),
+            ("semantic_metrics", "DELETE FROM semantic_metrics WHERE timestamp_utc < ?", rollup_cutoff),
+            ("minute_rollups", "DELETE FROM minute_rollups WHERE bucket_utc < ?", rollup_cutoff),
+            ("kpi_summaries", "DELETE FROM kpi_summaries WHERE updated_at_utc < ?", rollup_cutoff),
+        ]
+        deleted_counts: dict[str, int] = {}
+        with self._lock, self._managed_connection() as connection:
+            cursor = connection.cursor()
+            current_scope = "cleanup"
+            try:
+                for scope, statement, cutoff in cleanup_plan:
+                    current_scope = scope
+                    started_at = time.perf_counter()
+                    deleted_row_count = int(cursor.execute(statement, (cutoff,)).rowcount or 0)
+                    deleted_counts[scope] = deleted_row_count
+                    self._insert_cleanup_run(
+                        cursor,
+                        CleanupRunRecord(
+                            timestamp_utc=run_timestamp,
+                            success=True,
+                            cleanup_scope=scope,
+                            deleted_row_count=deleted_row_count,
+                            duration_ms=int((time.perf_counter() - started_at) * 1000),
+                            error_message=None,
+                        ),
+                    )
+                connection.commit()
+            except Exception as exc:
+                connection.rollback()
+                self._insert_cleanup_failure(connection, run_timestamp, current_scope, str(exc))
+                raise
+        return {f"{scope}_deleted": count for scope, count in deleted_counts.items()}
+
+    def get_recent_cleanup_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._managed_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, timestamp_utc, success, cleanup_scope, deleted_row_count, duration_ms, error_message
+                FROM cleanup_runs
+                ORDER BY timestamp_utc DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def get_latest_cleanup_timestamp(self, *, success_only: bool = False) -> str | None:
+        query = "SELECT MAX(timestamp_utc) AS latest_cleanup_ts FROM cleanup_runs"
+        if success_only:
+            query += " WHERE success = 1"
+        with self._managed_connection() as connection:
+            row = connection.execute(query).fetchone()
+        return row["latest_cleanup_ts"] if row and row["latest_cleanup_ts"] else None
+
     def get_table_stats(self, table_name: str) -> dict[str, Any]:
-        if table_name not in {"measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries"}:
+        if table_name not in {"measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries", "cleanup_runs"}:
             raise ValueError(f"Unsupported table name: {table_name}")
         timestamp_column = {
             "minute_rollups": "bucket_utc",
             "kpi_summaries": "updated_at_utc",
+            "cleanup_runs": "timestamp_utc",
         }.get(table_name, "timestamp_utc")
         with self._managed_connection() as connection:
             count_row = connection.execute(f"SELECT COUNT(*) AS row_count FROM {table_name}").fetchone()
@@ -725,11 +833,12 @@ class SQLiteStore:
         }
 
     def get_latest_rows(self, table_name: str, limit: int = 10) -> list[dict[str, Any]]:
-        if table_name not in {"measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries"}:
+        if table_name not in {"measurements", "poll_events", "alerts", "semantic_metrics", "minute_rollups", "kpi_summaries", "cleanup_runs"}:
             raise ValueError(f"Unsupported table name: {table_name}")
         order_column = {
             "minute_rollups": "bucket_utc",
             "kpi_summaries": "updated_at_utc",
+            "cleanup_runs": "timestamp_utc",
         }.get(table_name, "timestamp_utc")
         with self._managed_connection() as connection:
             rows = connection.execute(
@@ -761,6 +870,38 @@ class SQLiteStore:
                 measurement.raw_payload,
             ),
         )
+
+    def _insert_cleanup_run(self, cursor: sqlite3.Cursor, record: CleanupRunRecord) -> None:
+        cursor.execute(
+            """
+            INSERT INTO cleanup_runs (
+                timestamp_utc, success, cleanup_scope, deleted_row_count, duration_ms, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalize_storage_timestamp(record.timestamp_utc) or record.timestamp_utc,
+                int(record.success),
+                record.cleanup_scope,
+                record.deleted_row_count,
+                record.duration_ms,
+                record.error_message,
+            ),
+        )
+
+    def _insert_cleanup_failure(self, connection: sqlite3.Connection, timestamp_utc: str, cleanup_scope: str, error_message: str) -> None:
+        cursor = connection.cursor()
+        self._insert_cleanup_run(
+            cursor,
+            CleanupRunRecord(
+                timestamp_utc=timestamp_utc,
+                success=False,
+                cleanup_scope=cleanup_scope,
+                deleted_row_count=0,
+                duration_ms=0,
+                error_message=error_message,
+            ),
+        )
+        connection.commit()
 
     def _get_last_poll(self, connection: sqlite3.Connection, device_name: str) -> dict[str, Any] | None:
         row = connection.execute(

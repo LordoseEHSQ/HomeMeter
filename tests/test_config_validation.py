@@ -68,3 +68,22 @@ def test_config_validator_flags_missing_kostal_transport_auth_credentials(sample
     sample_config_dict["devices"]["kostal"]["auth"]["transport"]["uses_auth"] = True
     result = ConfigValidator().validate(sample_config_dict)
     assert any("transport username or password is missing" in finding.message for finding in result.findings)
+
+
+def test_config_validator_flags_invalid_scheduling_interval(sample_config_dict):
+    sample_config_dict["scheduling"]["raw_write_interval_seconds"] = 0
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("raw_write_interval_seconds must be a positive number" in finding.message for finding in result.findings)
+
+
+def test_config_validator_warns_when_raw_write_is_below_poll_interval(sample_config_dict):
+    sample_config_dict["scheduling"]["poll_interval_seconds"] = 20
+    sample_config_dict["scheduling"]["raw_write_interval_seconds"] = 10
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("cannot increase actual write frequency" in finding.message for finding in result.findings)
+
+
+def test_config_validator_warns_on_aggressive_raw_retention(sample_config_dict):
+    sample_config_dict["scheduling"]["retention_days_raw"] = 0.5
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("remove troubleshooting history too aggressively" in finding.message for finding in result.findings)

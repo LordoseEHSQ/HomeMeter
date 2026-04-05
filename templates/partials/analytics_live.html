@@ -1,6 +1,37 @@
 <section class="panel analytics-section">
     <div class="section-head section-head-wrap">
         <div>
+            <p class="eyebrow">{{ tr('analytics.live.title') }}</p>
+            <h2>{{ tr('analytics.live.title') }}</h2>
+            <p class="muted">{{ tr('analytics.live.subtitle') }}</p>
+        </div>
+        <div class="analytics-chart-stats">
+            <span class="badge status-info">{{ tr('analytics.live.metric_count') }}: {{ live_summary["metric_count"] or 0 }}</span>
+            <span class="tiny">{{ tr('analytics.live.last_update') }}: {{ live_summary["timestamp_utc"]|format_ts_detail if live_summary["timestamp_utc"] else tr('common.none_yet') }}</span>
+        </div>
+    </div>
+    {% if live_summary["items"] %}
+    <div class="analytics-kpi-grid analytics-kpi-grid-compact">
+        {% for item in live_summary["items"] %}
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card-head">
+                <h3>{{ item.label }}</h3>
+                <span class="badge status-{{ item.classification }}">{{ tr('classification.' ~ item.classification) }}</span>
+            </div>
+            <p class="analytics-kpi-value">{{ (item.value, item.unit)|format_metric_number }} <span>{{ (item.value, item.unit)|format_metric_unit }}</span></p>
+            <p class="tiny">{{ tr('analytics.table.confidence') }}: {{ tr('confidence.' ~ item.confidence_state) }} | {{ tr('analytics.table.coverage') }}: {{ "%.0f"|format(item.source_coverage * 100) }}%</p>
+        </article>
+        {% endfor %}
+    </div>
+    <p class="tiny">{{ tr('analytics.live.persistence_note') }}</p>
+    {% else %}
+    <p class="muted">{{ tr('analytics.live.empty') }}</p>
+    {% endif %}
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
             <p class="eyebrow">{{ tr('analytics.section.energy.title') }}</p>
             <h2>{{ tr('analytics.section.energy.title') }}</h2>
             <p class="muted">{{ tr('analytics.section.energy.subtitle') }}</p>
@@ -184,5 +215,9 @@
         <div><dt>{{ tr('analytics.persistence.latest_semantic') }}</dt><dd>{{ analytics.persistence_status.latest_semantic_metric_utc|format_ts_detail if analytics.persistence_status.latest_semantic_metric_utc else tr('common.none_yet') }}</dd></div>
         <div><dt>{{ tr('analytics.persistence.latest_rollup') }}</dt><dd>{{ analytics.persistence_status.latest_rollup_utc|format_ts_detail if analytics.persistence_status.latest_rollup_utc else tr('common.none_yet') }}</dd></div>
         <div><dt>{{ tr('analytics.persistence.latest_kpi') }}</dt><dd>{{ analytics.persistence_status.latest_kpi_summary_utc|format_ts_detail if analytics.persistence_status.latest_kpi_summary_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_poll') }}</dt><dd>{{ timing_status.last_successful_poll_utc|format_ts_detail if timing_status.last_successful_poll_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_raw_write') }}</dt><dd>{{ timing_status.last_successful_raw_write_utc|format_ts_detail if timing_status.last_successful_raw_write_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_derived_write') }}</dt><dd>{{ timing_status.last_successful_derived_write_utc|format_ts_detail if timing_status.last_successful_derived_write_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_rollup') }}</dt><dd>{{ timing_status.last_successful_rollup_utc|format_ts_detail if timing_status.last_successful_rollup_utc else tr('common.none_yet') }}</dd></div>
     </dl>
 </section>

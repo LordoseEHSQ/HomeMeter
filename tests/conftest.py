@@ -31,6 +31,18 @@ def sample_config_dict(tmp_path: Path) -> dict:
             "chart_refresh_seconds": 30,
             "rollup_retention_days": 180,
         },
+        "scheduling": {
+            "analytics_refresh_interval_seconds": 30,
+            "poll_interval_seconds": 10,
+            "raw_write_interval_seconds": 10,
+            "derived_write_interval_seconds": 20,
+            "rollup_interval_seconds": 60,
+            "retention_days_raw": 30,
+            "retention_days_rollup": 180,
+            "persistence_enabled": True,
+            "live_refresh_enabled": True,
+            "cleanup_enabled": True,
+        },
         "devices": {
             "cfos": {
                 "enabled": True,

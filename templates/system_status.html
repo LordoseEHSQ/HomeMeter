@@ -42,8 +42,94 @@
 </section>
 
 <section class="panel">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('system.timing.title') }}</p>
+            <h2>{{ tr('system.timing.title') }}</h2>
+            <p class="muted">{{ tr('system.timing.subtitle') }}</p>
+        </div>
+    </div>
+    <dl class="analytics-meta-grid">
+        <div><dt>{{ tr('settings.timing.analytics_refresh_interval_seconds') }}</dt><dd>{{ timing_status.analytics_refresh_interval_seconds }} s</dd></div>
+        <div><dt>{{ tr('settings.timing.poll_interval_seconds') }}</dt><dd>{{ timing_status.poll_interval_seconds }} s</dd></div>
+        <div><dt>{{ tr('settings.timing.raw_write_interval_seconds') }}</dt><dd>{{ timing_status.raw_write_interval_seconds }} s</dd></div>
+        <div><dt>{{ tr('settings.timing.derived_write_interval_seconds') }}</dt><dd>{{ timing_status.derived_write_interval_seconds }} s</dd></div>
+        <div><dt>{{ tr('settings.timing.rollup_interval_seconds') }}</dt><dd>{{ timing_status.rollup_interval_seconds }} s</dd></div>
+        <div><dt>{{ tr('settings.timing.retention_days_raw') }}</dt><dd>{{ timing_status.retention_days_raw }} d</dd></div>
+        <div><dt>{{ tr('settings.timing.retention_days_rollup') }}</dt><dd>{{ timing_status.retention_days_rollup }} d</dd></div>
+        <div><dt>{{ tr('settings.timing.persistence_status') }}</dt><dd>{{ timing_status.persistence_status }}</dd></div>
+        <div><dt>{{ tr('settings.timing.live_status') }}</dt><dd>{{ 'enabled' if timing_status.live_view_updating else 'disabled' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.cleanup_enabled') }}</dt><dd>{{ 'enabled' if timing_status.cleanup_enabled else 'disabled' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_poll') }}</dt><dd>{{ timing_status.last_successful_poll_utc|format_ts_detail if timing_status.last_successful_poll_utc else 'none' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_raw_write') }}</dt><dd>{{ timing_status.last_successful_raw_write_utc|format_ts_detail if timing_status.last_successful_raw_write_utc else 'none' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_derived_write') }}</dt><dd>{{ timing_status.last_successful_derived_write_utc|format_ts_detail if timing_status.last_successful_derived_write_utc else 'none' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_rollup') }}</dt><dd>{{ timing_status.last_successful_rollup_utc|format_ts_detail if timing_status.last_successful_rollup_utc else 'none' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_kpi') }}</dt><dd>{{ timing_status.last_successful_kpi_summary_utc|format_ts_detail if timing_status.last_successful_kpi_summary_utc else 'none' }}</dd></div>
+        <div><dt>{{ tr('settings.timing.last_cleanup') }}</dt><dd>{{ timing_status.last_successful_cleanup_utc|format_ts_detail if timing_status.last_successful_cleanup_utc else 'none' }}</dd></div>
+    </dl>
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Cleanup</p>
+            <h2>Retention cleanup history</h2>
+        </div>
+    </div>
+    {% if database_report.cleanup_runs %}
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Scope</th>
+                <th>Success</th>
+                <th>Deleted rows</th>
+                <th>Duration</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in database_report.cleanup_runs %}
+            <tr>
+                <td>{{ run.timestamp_utc|format_ts_detail }}</td>
+                <td>{{ run.cleanup_scope }}</td>
+                <td><span class="badge status-{{ 'healthy' if run.success else 'error' }}">{{ 'yes' if run.success else 'no' }}</span></td>
+                <td>{{ run.deleted_row_count }}</td>
+                <td>{{ run.duration_ms }} ms</td>
+                <td>{{ run.error_message or 'none' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">No cleanup runs have been stored yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Runtime hygiene</p>
+            <h2>Local startup and duplicate-process notes</h2>
+        </div>
+    </div>
+    <ul class="compact-list">
+        <li>HomeMeter warns when the configured local port already appears occupied at startup, but it does not manage or kill OS processes for you.</li>
+        <li>If port 5000 is already in use, another local Python/Flask process may still be listening.</li>
+        <li>Cleanup only runs while the polling loop is active. If polling is stopped, retention cleanup will not advance.</li>
+        <li>Browser QA in this environment is partly manual. Use the checklist in Dokumentation.md for the final visual pass.</li>
+    </ul>
+    {% if runtime_hygiene.port_conflict_warning %}
+    <p class="tiny"><strong>Startup warning:</strong> {{ runtime_hygiene.port_conflict_warning }}</p>
+    {% endif %}
+</section>
+
+<section class="panel">
     <h2>Integration gaps and implementation gaps</h2>
     {% if integration_gaps %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -64,6 +150,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No system-level gaps are currently flagged.</p>
     {% endif %}
@@ -71,6 +158,7 @@
 
 <section class="panel">
     <h2>Device health breakdown</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -95,6 +183,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </section>
 
 <section class="panel">

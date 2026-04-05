@@ -76,8 +76,41 @@ def test_update_config_from_form_updates_analytics_settings(sample_config_dict):
     updated = update_config_from_form(
         sample_config_dict,
         scope="analytics",
-        form={"default_window": "7d", "chart_refresh_seconds": "45", "rollup_retention_days": "365"},
+        form={"default_window": "7d", "rollup_retention_days": "365"},
     )
     assert updated["analytics"]["default_window"] == "7d"
-    assert updated["analytics"]["chart_refresh_seconds"] == 45
     assert updated["analytics"]["rollup_retention_days"] == 365
+
+
+def test_update_config_from_form_updates_timing_settings(sample_config_dict):
+    updated = update_config_from_form(
+        sample_config_dict,
+        scope="timing",
+        form={
+            "analytics_refresh_interval_seconds": "15",
+            "poll_interval_seconds": "12",
+            "raw_write_interval_seconds": "30",
+            "derived_write_interval_seconds": "45",
+            "rollup_interval_seconds": "60",
+            "retention_days_raw": "14",
+            "retention_days_rollup": "90",
+            "persistence_enabled__present": "1",
+            "persistence_enabled": "true",
+            "live_refresh_enabled__present": "1",
+            "cleanup_enabled__present": "1",
+            "cleanup_enabled": "true",
+        },
+    )
+    assert updated["scheduling"]["analytics_refresh_interval_seconds"] == 15
+    assert updated["scheduling"]["poll_interval_seconds"] == 12
+    assert updated["scheduling"]["raw_write_interval_seconds"] == 30
+    assert updated["scheduling"]["derived_write_interval_seconds"] == 45
+    assert updated["scheduling"]["rollup_interval_seconds"] == 60
+    assert updated["scheduling"]["retention_days_raw"] == 14
+    assert updated["scheduling"]["retention_days_rollup"] == 90
+    assert updated["scheduling"]["persistence_enabled"] is True
+    assert updated["scheduling"]["live_refresh_enabled"] is False
+    assert updated["scheduling"]["cleanup_enabled"] is True
+    assert updated["polling"]["interval_seconds"] == 12
+    assert updated["analytics"]["chart_refresh_seconds"] == 15
+    assert updated["analytics"]["rollup_retention_days"] == 90

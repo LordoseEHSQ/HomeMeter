@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">{{ tr('settings.devices.eyebrow') }}</p>
+        <h2>{{ tr('settings.devices.diagnostics_title') }}</h2>
+        <p class="muted">{{ tr('settings.devices.diagnostics_subtitle') }}</p>
+    </div>
+    <div class="hero-status">
+        <div class="toolbar-actions toolbar-actions-vertical">
+            <a class="button button-primary" href="{{ url_for('web.settings') }}">{{ tr('settings.devices.open_settings_hub') }}</a>
+            <form method="post" action="{{ url_for('web.run_diagnostics') }}">
+                <button type="submit" class="button">{{ tr('actions.run_diagnostics') }}</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('settings.devices.title') }}</p>
+            <h2>{{ tr('settings.devices.diagnostics_title') }}</h2>
+            <p class="muted">{{ tr('settings.devices.diagnostics_read_only_note') }}</p>
+        </div>
+    </div>
+    <div class="settings-device-stack">
+        {% for device in device_operations %}
+        <article class="settings-device-card">
+            <div class="settings-device-header">
+                <div>
+                    <p class="eyebrow">{{ device.device_type }}</p>
+                    <h3><a href="{{ url_for('web.device_detail', device_name=device.name) }}">{{ device.name }}</a></h3>
+                    <p class="muted">{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</p>
+                </div>
+                <div class="settings-device-badges">
+                    <span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span>
+                    <span class="badge status-{{ device.recording_summary.status }}">{{ device.recording_summary.status }}</span>
+                    <form method="post" action="{{ url_for('web.test_connection', device_name=device.name) }}">
+                        <button type="submit" class="button">{{ tr('actions.test_connection') }}</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="settings-device-grid">
+                <section class="settings-subpanel">
+                    <h4>{{ tr('settings.devices.title') }}</h4>
+                    <dl class="analytics-meta-grid">
+                        <div><dt>{{ tr('settings.devices.type') }}</dt><dd>{{ device.device_type }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.enabled') }}</dt><dd>{{ tr('common.yes') if device.enabled else tr('common.no') }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.host') }}</dt><dd>{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</dd></div>
+                        <div><dt>{{ tr('settings.devices.protocols') }}</dt><dd>{{ device.protocol_summary }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.last_attempt') }}</dt><dd>{{ device.last_poll.timestamp_utc|format_ts_detail if device.last_poll else tr('common.none_yet') }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.last_success') }}</dt><dd>{{ device.last_successful_poll.timestamp_utc|format_ts_detail if device.last_successful_poll else tr('common.none_yet') }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.last_data_read') }}</dt><dd>{{ device.last_successful_data_read|format_ts_detail if device.last_successful_data_read else tr('common.none_yet') }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.response') }}</dt><dd>{{ device.response_time_ms ~ ' ' ~ tr('common.ms') if device.response_time_ms is not none else tr('common.not_available') }}</dd></div>
+                    </dl>
+                </section>
+
+                <section class="settings-subpanel">
+                    <h4>{{ tr('settings.devices.auth.title') }}</h4>
+                    <dl class="analytics-meta-grid">
+                        {% if device.name == 'kostal' %}
+                        <div><dt>{{ tr('settings.form.role') }}</dt><dd>{{ device.auth_summary.role }}</dd></div>
+                        <div><dt>Web access</dt><dd>{{ device.auth_summary.web_access_state }}</dd></div>
+                        <div><dt>Transport auth</dt><dd>{{ device.auth_summary.transport_auth_state }}</dd></div>
+                        <div><dt>Transport uses auth</dt><dd>{{ tr('common.yes') if device.auth_summary.transport_uses_auth else tr('common.no') }}</dd></div>
+                        <div><dt>Role context</dt><dd>{{ device.auth_summary.role_context_note }}</dd></div>
+                        {% else %}
+                        <div><dt>Auth config</dt><dd>{{ device.auth_summary.config_state }}</dd></div>
+                        <div><dt>Auth state</dt><dd>{{ device.auth_summary.state }}</dd></div>
+                        <div><dt>Auth test</dt><dd>{{ device.auth_summary.auth_test_result }}</dd></div>
+                        <div><dt>Credential source</dt><dd>{{ device.auth_summary.credentials_source }}</dd></div>
+                        <div><dt>Worked variant</dt><dd>{{ device.auth_summary.worked_variant or tr('common.none_yet') }}</dd></div>
+                        {% endif %}
+                        <div><dt>Masked secrets</dt><dd>{% for key, value in device.auth_summary.masked.items() %}{{ key }}={{ value }}{% if not loop.last %}, {% endif %}{% endfor %}</dd></div>
+                    </dl>
+                    {% if device.auth_summary.security_warning %}
+                    <p class="tiny"><strong>{{ tr('settings.devices.security_warning') }}:</strong> {{ device.auth_summary.security_warning }}</p>
+                    {% endif %}
+                </section>
+
+                <section class="settings-subpanel">
+                    <h4>{{ tr('settings.devices.capabilities.title') }}</h4>
+                    <dl class="analytics-meta-grid">
+                        <div><dt>Settings read</dt><dd>{{ device.settings_read_support_state }}</dd></div>
+                        <div><dt>Measurement read</dt><dd>{{ device.measurement_read_support_state }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.status') }}</dt><dd>{{ device.collector_status }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.mapping_note') }}</dt><dd>{{ device.mapping_note }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.raw_payload') }}</dt><dd>{{ tr('common.yes') if device.raw_payload_available else tr('common.no') }}</dd></div>
+                        <div><dt>{{ tr('settings.devices.metrics') }}</dt><dd>{{ device.normalized_metrics_count }}</dd></div>
+                    </dl>
+                </section>
+
+                <section class="settings-subpanel">
+                    <h4>{{ tr('settings.devices.recording.title') }}</h4>
+                    <dl class="analytics-meta-grid">
+                        <div><dt>{{ tr('settings.devices.recording') }}</dt><dd><span class="badge status-{{ device.recording_summary.status }}">{{ device.recording_summary.status }}</span></dd></div>
+                        <div><dt>Poll events</dt><dd>{{ device.recording_summary.poll_event_count }}</dd></div>
+                        <div><dt>Raw payloads</dt><dd>{{ device.recording_summary.raw_payload_count }}</dd></div>
+                        <div><dt>Normalized</dt><dd>{{ device.recording_summary.normalized_measurement_count }}</dd></div>
+                        <div><dt>Likely candidates</dt><dd>{{ device.recording_summary.likely_candidate_measurement_count }}</dd></div>
+                        <div><dt>Unmapped numeric</dt><dd>{{ device.recording_summary.unmapped_numeric_measurement_count }}</dd></div>
+                    </dl>
+                    <p class="muted">{{ device.recording_summary.message }}</p>
+                </section>
+            </div>
+
+            <section class="settings-subpanel settings-findings">
+                <h4>{{ tr('settings.devices.findings.title') }}</h4>
+                {% if device.config_findings %}
+                <ul class="compact-list">
+                    {% for finding in device.config_findings %}
+                    <li><span class="badge severity-{{ finding.severity }}">{{ finding.severity }}</span> {{ finding.message }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="muted">{{ tr('settings.devices.findings.empty') }}</p>
+                {% endif %}
+            </section>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+{% if cfos_protocol_statuses %}
+<section class="panel">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('settings.protocols.title') }}</p>
+            <h2>{{ tr('settings.protocols.title') }}</h2>
+            <p class="muted">{{ tr('settings.protocols.subtitle') }}</p>
+        </div>
+    </div>
+    <div class="protocol-surface-grid">
+        {% for surface in cfos_protocol_statuses %}
+        <article class="settings-subpanel">
+            <div class="device-card-header">
+                <h3>{{ surface.surface }}</h3>
+                <span class="badge status-{{ surface.implementation_state }}">{{ surface.implementation_state }}</span>
+            </div>
+            <dl class="analytics-meta-grid">
+                <div><dt>{{ tr('settings.protocols.enabled') }}</dt><dd>{{ tr('common.yes') if surface.enabled else tr('common.no') }}</dd></div>
+                <div><dt>{{ tr('settings.protocols.configured') }}</dt><dd>{{ tr('common.yes') if surface.configured else tr('common.no') }}</dd></div>
+                <div><dt>{{ tr('settings.protocols.reachable') }}</dt><dd>{{ surface.reachable if surface.reachable is not none else tr('common.unknown') }}</dd></div>
+                <div><dt>{{ tr('settings.protocols.auth') }}</dt><dd>{{ surface.auth_status }}</dd></div>
+                <div><dt>{{ tr('settings.protocols.data') }}</dt><dd>{{ surface.data_status }}</dd></div>
+                <div><dt>{{ tr('settings.protocols.implementation') }}</dt><dd>{{ surface.implementation_state }}</dd></div>
+                <div><dt>Host</dt><dd>{{ surface.host or tr('common.none') }}</dd></div>
+                <div><dt>Port</dt><dd>{{ surface.port or tr('common.none') }}</dd></div>
+            </dl>
+            <form method="post" action="{{ url_for('web.test_protocol', device_name='cfos', surface=surface.surface) }}">
+                <button type="submit" class="button">{{ tr('actions.test_path') }}</button>
+            </form>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<section class="panel">
+    <h2>{{ tr('settings.gaps.title') }}</h2>
+    {% if integration_gaps %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Device</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for gap in integration_gaps %}
+                <tr>
+                    <td>{{ gap.device_name }}</td>
+                    <td>{{ gap.gap_type }}</td>
+                    <td><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span></td>
+                    <td>{{ gap.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted">{{ tr('settings.gaps.empty') }}</p>
+    {% endif %}
+</section>
+{% endblock %}

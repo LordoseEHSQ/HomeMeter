@@ -643,6 +643,25 @@ th {
     gap: 1.25rem;
 }
 
+.settings-hub-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.settings-hub-card {
+    background: var(--panel-soft);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1rem 1.05rem;
+}
+
+.settings-split-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
 .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -698,6 +717,18 @@ th {
     font-weight: 700;
 }
 
+.details-box {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.details-box:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
 pre,
 code {
     white-space: pre-wrap;
@@ -727,6 +758,8 @@ pre {
 
     .analytics-kpi-grid,
     .analytics-kpi-grid-compact,
+    .settings-hub-grid,
+    .settings-split-grid,
     .settings-device-grid,
     .protocol-surface-grid,
     .form-grid,

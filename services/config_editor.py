@@ -62,8 +62,48 @@ def update_config_from_form(config: dict[str, Any], scope: str, form: dict[str, 
     elif scope == "analytics":
         analytics = updated.setdefault("analytics", {})
         analytics["default_window"] = form.get("default_window", analytics.get("default_window", "24h")) or "24h"
-        analytics["chart_refresh_seconds"] = int(_to_number(form.get("chart_refresh_seconds"), analytics.get("chart_refresh_seconds", 30)))
         analytics["rollup_retention_days"] = int(_to_number(form.get("rollup_retention_days"), analytics.get("rollup_retention_days", 180)))
+    elif scope == "timing":
+        scheduling = updated.setdefault("scheduling", {})
+        scheduling["analytics_refresh_interval_seconds"] = int(
+            _to_number(form.get("analytics_refresh_interval_seconds"), scheduling.get("analytics_refresh_interval_seconds", 30))
+        )
+        scheduling["poll_interval_seconds"] = int(
+            _to_number(form.get("poll_interval_seconds"), scheduling.get("poll_interval_seconds", updated.get("polling", {}).get("interval_seconds", 10)))
+        )
+        scheduling["raw_write_interval_seconds"] = int(
+            _to_number(form.get("raw_write_interval_seconds"), scheduling.get("raw_write_interval_seconds", 10))
+        )
+        scheduling["derived_write_interval_seconds"] = int(
+            _to_number(form.get("derived_write_interval_seconds"), scheduling.get("derived_write_interval_seconds", 10))
+        )
+        scheduling["rollup_interval_seconds"] = int(
+            _to_number(form.get("rollup_interval_seconds"), scheduling.get("rollup_interval_seconds", 60))
+        )
+        scheduling["retention_days_raw"] = int(
+            _to_number(form.get("retention_days_raw"), scheduling.get("retention_days_raw", 30))
+        )
+        scheduling["retention_days_rollup"] = int(
+            _to_number(
+                form.get("retention_days_rollup"),
+                scheduling.get("retention_days_rollup", updated.get("analytics", {}).get("rollup_retention_days", 180)),
+            )
+        )
+        if "persistence_enabled__present" in form:
+            scheduling["persistence_enabled"] = _to_bool(form.get("persistence_enabled"), False)
+        else:
+            scheduling["persistence_enabled"] = bool(scheduling.get("persistence_enabled", True))
+        if "live_refresh_enabled__present" in form:
+            scheduling["live_refresh_enabled"] = _to_bool(form.get("live_refresh_enabled"), False)
+        else:
+            scheduling["live_refresh_enabled"] = bool(scheduling.get("live_refresh_enabled", True))
+        if "cleanup_enabled__present" in form:
+            scheduling["cleanup_enabled"] = _to_bool(form.get("cleanup_enabled"), False)
+        else:
+            scheduling["cleanup_enabled"] = bool(scheduling.get("cleanup_enabled", True))
+        updated.setdefault("polling", {})["interval_seconds"] = scheduling["poll_interval_seconds"]
+        updated.setdefault("analytics", {})["chart_refresh_seconds"] = scheduling["analytics_refresh_interval_seconds"]
+        updated.setdefault("analytics", {})["rollup_retention_days"] = scheduling["retention_days_rollup"]
     else:
         raise ValueError(f"Unsupported config scope: {scope}")
     return updated

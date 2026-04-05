@@ -56,6 +56,7 @@ class ConfigValidator:
         storage = config.get("storage")
         devices = config.get("devices")
         time_config = config.get("time", {}) or {}
+        scheduling = config.get("scheduling", {}) or {}
 
         if not isinstance(app, dict):
             findings.append(self._finding("error", "system", "app", "Missing top-level 'app' section."))
@@ -90,6 +91,8 @@ class ConfigValidator:
         }.items():
             if value is not None and not self._is_positive_number(value):
                 findings.append(self._finding("error", "system", key, f"{key} must be a positive number."))
+
+        self._validate_scheduling_settings(scheduling, polling or {}, findings)
 
         sqlite_path = (storage or {}).get("sqlite_path")
         if not sqlite_path:
@@ -370,6 +373,109 @@ class ConfigValidator:
                     "time",
                     "time.ntp.servers",
                     "Reference time checking is enabled but no NTP servers are configured.",
+                )
+            )
+
+    def _validate_scheduling_settings(
+        self,
+        scheduling: dict[str, Any],
+        polling: dict[str, Any],
+        findings: list[ConfigFinding],
+    ) -> None:
+        if scheduling and not isinstance(scheduling, dict):
+            findings.append(self._finding("error", "system", "scheduling", "Scheduling settings must be a mapping."))
+            return
+        values = {
+            "scheduling.analytics_refresh_interval_seconds": scheduling.get("analytics_refresh_interval_seconds", 30),
+            "scheduling.poll_interval_seconds": scheduling.get("poll_interval_seconds", polling.get("interval_seconds", 10)),
+            "scheduling.raw_write_interval_seconds": scheduling.get("raw_write_interval_seconds", polling.get("interval_seconds", 10)),
+            "scheduling.derived_write_interval_seconds": scheduling.get("derived_write_interval_seconds", polling.get("interval_seconds", 10)),
+            "scheduling.rollup_interval_seconds": scheduling.get("rollup_interval_seconds", 60),
+            "scheduling.retention_days_raw": scheduling.get("retention_days_raw", 30),
+            "scheduling.retention_days_rollup": scheduling.get("retention_days_rollup", 180),
+        }
+        for key, value in values.items():
+            if not self._is_positive_number(value):
+                findings.append(self._finding("error", "system", key, f"{key} must be a positive number."))
+
+        poll_interval = float(values["scheduling.poll_interval_seconds"])
+        raw_interval = float(values["scheduling.raw_write_interval_seconds"])
+        derived_interval = float(values["scheduling.derived_write_interval_seconds"])
+        rollup_interval = float(values["scheduling.rollup_interval_seconds"])
+        refresh_interval = float(values["scheduling.analytics_refresh_interval_seconds"])
+        retention_days_raw = float(values["scheduling.retention_days_raw"])
+        retention_days_rollup = float(values["scheduling.retention_days_rollup"])
+
+        if refresh_interval < 5:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "system",
+                    "scheduling.analytics_refresh_interval_seconds",
+                    "Analytics refresh below 5 seconds is unusually aggressive for a local diagnostics dashboard.",
+                )
+            )
+        if raw_interval < poll_interval:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "system",
+                    "scheduling.raw_write_interval_seconds",
+                    "Raw write interval is below the poll interval, so it cannot increase actual write frequency.",
+                )
+            )
+        if derived_interval < poll_interval:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "system",
+                    "scheduling.derived_write_interval_seconds",
+                    "Derived write interval is below the poll interval, so it cannot increase actual write frequency.",
+                )
+            )
+        if rollup_interval < derived_interval:
+            findings.append(
+                self._finding(
+                    "info",
+                    "system",
+                    "scheduling.rollup_interval_seconds",
+                    "Rollups are configured more frequently than derived writes; some rollup cycles may refresh unchanged data.",
+                )
+            )
+        if retention_days_raw < 1:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "system",
+                    "scheduling.retention_days_raw",
+                    "Raw retention below one day is unusually short and may remove troubleshooting history too aggressively.",
+                )
+            )
+        if retention_days_rollup < retention_days_raw:
+            findings.append(
+                self._finding(
+                    "info",
+                    "system",
+                    "scheduling.retention_days_rollup",
+                    "Rollup retention is shorter than raw retention. That is allowed, but long-range KPI views may lose historical context first.",
+                )
+            )
+        if bool(scheduling.get("cleanup_enabled", True)) and not bool(scheduling.get("persistence_enabled", True)):
+            findings.append(
+                self._finding(
+                    "info",
+                    "system",
+                    "scheduling.cleanup_enabled",
+                    "Cleanup is enabled but persistence is disabled. Retention cleanup will only act on already stored data during active polling cycles.",
+                )
+            )
+        if not bool(scheduling.get("live_refresh_enabled", True)) and not bool(scheduling.get("persistence_enabled", True)):
+            findings.append(
+                self._finding(
+                    "warning",
+                    "system",
+                    "scheduling",
+                    "Live refresh and persistence are both disabled. The UI will appear static until settings change.",
                 )
             )
 
