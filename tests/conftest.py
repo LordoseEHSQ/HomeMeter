@@ -32,6 +32,7 @@ def sample_config_dict(tmp_path: Path) -> dict:
                 "name": "cfos",
                 "base_url": "http://127.0.0.1",
                 "status_path": "/",
+                "candidate_status_paths": ["/", "/status", "/api/status"],
                 "preferred_protocols": ["http", "mqtt"],
                 "auth": {"type": "basic", "username": "admin", "password": "secret"},
                 "protocols": {

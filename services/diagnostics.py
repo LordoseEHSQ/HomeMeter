@@ -114,11 +114,17 @@ def _credential_expectation(auth: dict[str, Any]) -> str:
 
 def _mapping_note(device_name: str) -> str:
     if device_name == "cfos":
-        return "Best-effort mapping with raw fallback. Confirm field semantics against your real cFos payload."
+        return (
+            "HTTP collector is sharper and can try configured candidate paths, but settings visibility and "
+            "wallbox metric semantics are still only partially confirmed until real cFos payloads are validated."
+        )
     if device_name == "easee":
         return "Adapter skeleton only. Reachability is real, metric mapping remains intentionally partial."
     if device_name == "kostal":
-        return "Connectivity-first collector. Modbus/SunSpec specs are modeled, but register mapping remains open."
+        return (
+            "Connectivity and byte-order handling are modeled for KOSTAL, but live register addresses and "
+            "sign conventions are still only partially prepared, not fully verified."
+        )
     return "Collector mapping completeness is unknown."
 
 

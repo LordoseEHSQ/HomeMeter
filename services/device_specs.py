@@ -23,6 +23,8 @@ def _build_cfos_specs(device_config: dict[str, Any]) -> dict[str, Any]:
                 "host": device_config.get("base_url"),
                 "port": _extract_port(device_config.get("base_url"), fallback=80),
                 "implemented": True,
+                "status_path": device_config.get("status_path", "/"),
+                "candidate_status_paths": device_config.get("candidate_status_paths", []),
                 "settings_read_support_state": "partial",
                 "measurement_read_support_state": "partial",
             },
@@ -79,6 +81,7 @@ def _build_kostal_specs(device_config: dict[str, Any]) -> dict[str, Any]:
         "unit_id": int(device_config.get("unit_id", 71) or 71),
         "modbus_byte_order": device_config.get("modbus_byte_order", "CDAB"),
         "sunspec_byte_order": device_config.get("sunspec_byte_order", "ABCD"),
+        "mapping_state": "partial",
         "preferred_protocols": [device_config.get("protocol", "modbus_tcp")],
         "protocols": {
             "modbus_tcp": {

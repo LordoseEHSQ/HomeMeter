@@ -4,6 +4,7 @@ import socket
 from datetime import datetime, timezone
 
 from collectors.base import BaseCollector, CollectorResult, CollectorStatus
+from services.kostal_mapping import build_kostal_mapping_profile
 
 
 class KostalCollector(BaseCollector):
@@ -12,6 +13,7 @@ class KostalCollector(BaseCollector):
         host = str(self.config.get("host", "")).strip()
         port = int(self.config.get("port", 1502))
         protocol = str(self.config.get("protocol", "modbus_tcp")).lower()
+        mapping_profile = build_kostal_mapping_profile(self.config)
         if not host:
             return self._result(
                 started=started,
@@ -40,9 +42,7 @@ class KostalCollector(BaseCollector):
                     details={
                         "mapping_status": "connectivity_only",
                         "protocol": protocol,
-                        "unit_id": self.config.get("unit_id", 71),
-                        "modbus_byte_order": self.config.get("modbus_byte_order", "CDAB"),
-                        "sunspec_byte_order": self.config.get("sunspec_byte_order", "ABCD"),
+                        "mapping_profile": mapping_profile,
                     },
                 )
         except TimeoutError as exc:
@@ -61,5 +61,5 @@ class KostalCollector(BaseCollector):
                     f"KOSTAL TCP connection failed on {host}:{port}: {exc}. "
                     "Check routing between subnets 192.168.50.x and 192.168.1.x."
                 ),
-                details={"protocol": protocol},
+                details={"protocol": protocol, "mapping_profile": mapping_profile},
             )

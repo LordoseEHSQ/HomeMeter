@@ -30,6 +30,10 @@ devices:
     name: cfos
     base_url: "http://192.168.50.139"
     status_path: "/"
+    candidate_status_paths:
+      - "/"
+      - "/status"
+      - "/api/status"
     preferred_protocols:
       - http
       - mqtt

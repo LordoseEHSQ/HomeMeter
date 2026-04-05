@@ -261,6 +261,16 @@ class ConfigValidator:
                     findings.append(
                         self._finding("error", "cfos", "devices.cfos.base_url", "cFos HTTP is enabled but base_url is missing.")
                     )
+                candidate_paths = device_config.get("candidate_status_paths")
+                if candidate_paths is not None and not isinstance(candidate_paths, list):
+                    findings.append(
+                        self._finding(
+                            "warning",
+                            "cfos",
+                            "devices.cfos.candidate_status_paths",
+                            "cFos candidate_status_paths should be a list of HTTP paths.",
+                        )
+                    )
             else:
                 if not protocol_cfg.get("host"):
                     findings.append(

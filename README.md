@@ -1,37 +1,107 @@
 # HomeMeter Diagnostics
 
-HomeMeter Diagnostics is a local Flask application for checking whether your home energy measurements are reachable, internally consistent and plausible before you trust them for charging or automation logic. It is diagnostics-first: it stores poll attempts, normalized values, raw payloads and alerts in SQLite, and it makes uncertainty visible instead of masking it.
+HomeMeter Diagnostics is a local Flask application for validating home-energy measurements before you trust them for charging logic or control optimization. It is diagnostics-first: the app stores poll attempts, normalized values, raw payloads, alerts, and operational findings in SQLite, and it keeps uncertainty visible instead of hiding it.
 
-## What the app is for
+## What is already implemented
 
-- Verify whether devices are reachable
-- See whether failures come from network, timeout, auth, parsing, config or incomplete mapping
-- Confirm that data is really being stored
-- Inspect which collectors are healthy, reachable-but-partial, failing or disabled
-- Review config health before trusting collector output
-- Inspect database activity and recent rows directly in the UI
+- Local Flask web UI with dashboard, device detail, alerts, system status, config health, database inspection, device settings, and time diagnostics pages
+- SQLite persistence for measurements, poll events, and alerts
+- Background polling plus on-demand diagnostics actions
+- UTC storage with centralized local-time display formatting
+- Config validation and system-health summaries
+- cFos HTTP collector with configurable credentials, candidate endpoint paths, raw-payload retention, and best-effort normalization
+- cFos multi-surface diagnostics model for HTTP, MQTT, Modbus, and SunSpec visibility
+- KOSTAL connectivity-first collector with protocol, unit ID, and byte-order specs modeled
+- Gap detection for missing metrics, mapping gaps, partial integrations, and stale/implausible values
+- pytest-based automated tests
+
+## What remains partial
+
+- Full real cFos protocol support is still incomplete. HTTP is the best-developed surface; MQTT, Modbus, and SunSpec remain preparatory only.
+- cFos settings visibility is partial. The collector can surface likely setting-like fields from HTTP payloads, but it does not claim complete settings coverage.
+- cFos wallbox / Wallbox Booster power mapping is still best-effort until real payload semantics are confirmed.
+- KOSTAL register mapping is still incomplete. The app models connectivity, byte order, and decoding helpers, but it does not yet claim verified live register addresses or sign conventions.
+- Easee remains a transparent skeleton integration.
 
 ## Current pages
 
 - `/`: dashboard
-- `/system`: combined system health summary
-- `/settings`: device operations and configuration overview
-- `/config-health`: config validation findings
-- `/database`: database inspection and storage observability
+- `/system`: combined health, storage, gap, and time summary
+- `/settings`: device operations, protocol surfaces, config snapshot, and time diagnostics
+- `/settings/devices`: alias for device operations
+- `/settings/database`: alias for database inspection
+- `/settings/config-health`: alias for config health
+- `/settings/time`: dedicated time settings and reference-time diagnostics
+- `/config-health`: validation findings
+- `/database`: storage observability and recent rows
 - `/alerts`: recent alerts
-- `/devices/<device_name>`: detailed device diagnostics
+- `/devices/<device_name>`: detailed per-device diagnostics
 
 ## Core structure
 
 - `main.py`: Flask entrypoint
-- `app.py`: app factory, config loading, collector setup and polling manager
-- `collectors/`: collector modules and collector result contract
-- `storage/sqlite_store.py`: SQLite schema and data-access helpers
-- `analysis/plausibility.py`: plausibility rules
-- `services/`: config validation, health summary, diagnostics formatting and database inspection
-- `web/routes.py`: Flask routes and operation actions
-- `templates/` and `static/`: Jinja UI and CSS
+- `app.py`: app factory, config loading, collector wiring, polling manager, filters
+- `collectors/`: collector implementations and shared result contract
+- `storage/sqlite_store.py`: SQLite schema and query helpers
+- `analysis/plausibility.py`: plausibility rules and alert generation
+- `services/`: config validation, device specs, cFos protocol diagnostics, time handling, KOSTAL decoding helpers, health summaries, and gap detection
+- `templates/` and `static/`: Jinja templates and CSS
 - `tests/`: pytest suite
+
+## Time and timestamp handling
+
+- Canonical storage is UTC, formatted as `YYYY-MM-DDTHH:MM:SSZ`
+- UI display is localized centrally via a shared filter/helper
+- Default display timezone is `Europe/Berlin`
+- Default display format is `DD.MM.YYYY HH:MM:SS`
+- Important views include seconds consistently
+- Optional reference-time checks query configured NTP servers and estimate drift
+- The app does not set the operating-system clock
+
+## Configuration
+
+Top-level sections expected in `config.yaml`:
+
+- `app`
+- `polling`
+- `storage`
+- `time`
+- `devices`
+
+Configured devices:
+
+- `cfos`
+- `easee`
+- `kostal`
+
+### cFos config state
+
+The current cFos integration is HTTP-first and configurable:
+
+- `base_url`
+- `status_path`
+- `candidate_status_paths`
+- `auth.type`, `auth.username`, `auth.password`, `auth.token`
+- `preferred_protocols`
+- `protocols.http`
+- `protocols.mqtt`
+- `protocols.modbus`
+- `protocols.sunspec`
+
+The collector will try the configured HTTP path first, then any configured candidate paths, and it records raw payloads even when full mapping is not available.
+
+### KOSTAL config state
+
+The current KOSTAL integration models:
+
+- `host`
+- `port`
+- `protocol` (`modbus_tcp` or `sunspec_tcp`)
+- `unit_id`
+- `modbus_byte_order`
+- `sunspec_byte_order`
+
+Connectivity is real. Register mapping is still explicitly partial.
 
 ## Windows setup
 
@@ -43,41 +113,15 @@ python main.py
 
 Then open `http://127.0.0.1:5000`.
 
-If you prefer a virtual environment, you can still create one, but the current environment may hit Windows permission problems around `ensurepip`. The app itself works with the installed local Python as long as the required packages are present.
+## Running tests
 
-## Configuration
+```powershell
+py -3.13 -m pytest -q tests -p no:cacheprovider --basetemp=.pytest-tmp-run
+```
 
-Top-level sections expected in `config.yaml`:
+The custom `--basetemp` path is recommended on this Windows setup because default temporary directories can hit restrictive permission behavior.
 
-- `app`
-- `polling`
-- `storage`
-- `devices`
-
-Configured devices:
-
-- `cfos`
-- `easee`
-- `kostal`
-
-The UI now validates and reports configuration issues such as:
-
-- missing sections
-- invalid polling interval
-- invalid timeout values
-- enabled device without host/base URL
-- missing credentials for selected auth type
-- suspicious or incomplete collector setup
-
-## Collector truthfulness
-
-This project does not pretend that incomplete device mappings are complete.
-
-- `cFos`: real HTTP collector with best-effort field mapping and raw fallback
-- `Easee`: adapter skeleton with transparent raw payload capture and explicit mapping incompleteness
-- `KOSTAL`: connectivity-first collector with clear distinction between reachability and mapping completeness
-
-Collector and operations states shown in the UI include:
+## Diagnostics states shown in the UI
 
 - healthy
 - reachable
@@ -88,89 +132,109 @@ Collector and operations states shown in the UI include:
 - parsing failed
 - mapping incomplete
 - unsupported response
+- empty payload
 - disabled
 - config error
+
+## cFos current integration truth
+
+What is implemented now:
+
+- configurable HTTP auth
+- configurable candidate HTTP status paths
+- JSON, query-string-style, and line-pair payload parsing
+- best-effort normalization for likely power/current/energy/current-limit fields
+- raw numeric fallback when fields are not yet confidently mapped
+- visibility of cFos protocol surfaces in the UI
+
+What is still not fully solved:
+
+- full settings coverage
+- confirmed wallbox-specific metric semantics for every field
+- full MQTT / Modbus / SunSpec implementation
+- guaranteed endpoint completeness across all cFos firmware/config variants
+
+## KOSTAL current integration truth
+
+What is implemented now:
+
+- protocol/spec modeling for `modbus_tcp` and `sunspec_tcp`
+- connectivity checks against the configured TCP endpoint
+- explicit mapping-profile visibility in diagnostics
+- byte-order-aware decoding helpers for future verified register reads
+
+What is still open:
+
+- verified live register map
+- trusted power sign conventions
+- full SunSpec model discovery and value extraction
 
 ## Database observability
 
 The database page shows:
 
-- SQLite file path
+- SQLite path
 - file size
 - row counts per table
-- newest and oldest record timestamps
+- oldest and newest timestamps per table
 - latest rows from `measurements`
 - latest rows from `poll_events`
 - latest rows from `alerts`
+- whether cFos or KOSTAL measurements exist
+- whether raw payloads are being stored
 - storage activity summary
 
-## Operations actions
+## Known limitations
 
-The UI includes these local actions:
-
-- reload config
-- run diagnostics now
-- test connection per device
-
-These actions are implemented server-side and update stored poll events where appropriate.
-
-## Running tests
-
-Install test dependencies through `requirements.txt`, then run:
-
-```powershell
-py -3.13 -m pytest -q tests -p no:cacheprovider --basetemp=.pytest-tmp-run
-```
-
-The custom `--basetemp` value is recommended on this Windows setup because the default temp directory may have restrictive permissions.
-
-## Implemented and intentionally partial
-
-Implemented:
-
-- local Flask UI
-- SQLite persistence
-- background polling
-- config validation
-- system health summary
-- database inspection
-- device operations overview
-- pytest-based automated tests
-
-Intentionally partial:
-
-- exact real-device API mappings for Easee
-- exact real-device API/register mappings for KOSTAL
-- full semantic certainty for cFos field names until your payload is confirmed
+- The app is designed to stay runnable even when collectors are partial.
+- Raw payload visibility is considered a success criterion for diagnostics, not proof of correct semantic mapping.
+- cFos and KOSTAL are intentionally honest about mapping gaps.
+- Time reference checking is a drift/check feature only, not clock synchronization.
 
 ## Troubleshooting
 
+### Hanging behavior
+
+- Long request hangs are not expected.
+- Earlier iterations hit a real hanging issue caused by an old stuck `python.exe main.py` process on port `5000`.
+- Current routes were kept lighter to avoid rebuilding heavy global snapshots on every request.
+
+### Port 5000 already in use
+
+- Check whether another Flask or Python process is already bound to `127.0.0.1:5000`.
+- If needed, stop the old process before restarting the app.
+
+### Stuck Python processes
+
+- On Windows, inspect running Python processes and stop stale `main.py` instances if the UI becomes unresponsive.
+- Multiple old processes can make it look like new code is running when an older server is actually serving the requests.
+
 ### Device unreachable
 
-- Verify IP, host, port and subnet routing.
+- Verify IP, host, port, subnet routing, and local firewall rules.
 - Your setup spans `192.168.50.x` and `192.168.1.x`; cross-subnet routing problems are expected to matter.
-
-### Timeout
-
-- Increase timeout values in `config.yaml`.
-- Check firewall, routing and Wi-Fi stability.
 
 ### Auth failure
 
-- Review `auth.type`, username, password or token.
-- The UI distinguishes missing credentials from actual auth failures when possible.
+- Review configured `auth.type`, username, password, or token.
+- cFos credentials remain configurable; they are not hardcoded in collector logic.
+
+### Partial mapping
+
+- Open the device detail page and inspect the latest raw payload plus recent measurements.
+- A partial mapping state is explicit and intentional. It does not mean the collector is fully implemented.
+
+### Empty measurements
+
+- Open `/database` and confirm whether poll events exist without normalized measurements.
+- If raw payloads exist but normalized metrics do not, check the device detail page for mapping gaps.
+
+### Config issues
+
+- Open `/config-health` or `/settings`.
+- The validator reports missing sections, missing hosts, bad ports, missing credentials, suspicious cFos protocol blocks, invalid KOSTAL protocol selections, and time-config issues.
 
 ### Parse failure
 
-- Open the device detail page and inspect the latest raw payload.
-- Extend the collector only after verifying the real response shape.
-
-### Data not stored
-
-- Open `/database`.
-- Check poll-event counts, measurement counts and the latest rows in each table.
-
-### Mapping incomplete
-
-- This is an explicit, honest state for partially implemented collectors.
-- It is not a silent error and not a success state.
+- Inspect the latest raw payload on the device page.
+- Extend or confirm the collector mapping only after the real payload format is known.

@@ -42,3 +42,9 @@ def test_config_validator_flags_invalid_kostal_protocol(sample_config_dict):
     sample_config_dict["devices"]["kostal"]["protocol"] = "http"
     result = ConfigValidator().validate(sample_config_dict)
     assert any("KOSTAL protocol must be modbus_tcp or sunspec_tcp" in finding.message for finding in result.findings)
+
+
+def test_config_validator_flags_non_list_cfos_candidate_paths(sample_config_dict):
+    sample_config_dict["devices"]["cfos"]["candidate_status_paths"] = "/status"
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("candidate_status_paths should be a list" in finding.message for finding in result.findings)

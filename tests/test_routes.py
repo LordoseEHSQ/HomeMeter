@@ -25,3 +25,9 @@ def test_settings_time_route_renders(client):
     response = client.get("/settings/time")
     assert response.status_code == 200
     assert b"Time settings and diagnostics" in response.data
+
+
+def test_device_detail_route_renders(client):
+    response = client.get("/devices/cfos")
+    assert response.status_code == 200
+    assert b"cFos Protocol Surface Diagnostics" in response.data
