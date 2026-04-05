@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.pytest-tmp-run/
+.tmp/
+pytest-cache-files-*/
+
+homemeter.db
+config.yaml
+
+.DS_Store
+Thumbs.db

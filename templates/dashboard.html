@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">System Overview</p>
+        <h2>Operational health at a glance</h2>
+        <p class="muted">Use this page to decide quickly whether the app, collectors, data flow and storage pipeline are trustworthy enough for deeper energy analysis.</p>
+    </div>
+    <div class="hero-status">
+        <span class="badge status-{{ system_health.status }}">{{ system_health.status }}</span>
+        <dl class="compact-stats">
+            <div><dt>Config</dt><dd>{{ system_health.config_status }}</dd></div>
+            <div><dt>Recent alerts</dt><dd>{{ system_health.alert_count }}</dd></div>
+            <div><dt>Recent failures</dt><dd>{{ system_health.recent_failures }}</dd></div>
+            <div><dt>Storage</dt><dd>{{ system_health.storage_status }}</dd></div>
+            <div><dt>Timezone</dt><dd>{{ time_settings.display_timezone }}</dd></div>
+        </dl>
+    </div>
+</section>
+
+<section class="stats-grid">
+    {% for device in device_operations %}
+    <article class="stat-card">
+        <p class="eyebrow">{{ device.name }} / {{ device.device_type }}</p>
+        <h3>{{ device.collector_status.replace('_', ' ') }}</h3>
+        <p class="muted">{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</p>
+        <p class="tiny">Last success: {{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'none' }}</p>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <h2>Devices</h2>
+        <a href="{{ url_for('web.settings') }}">Open operations view</a>
+    </div>
+    <div class="device-grid">
+        {% for device in device_operations %}
+        <article class="device-card">
+            <div class="device-card-header">
+                <h3><a href="{{ url_for('web.device_detail', device_name=device.name) }}">{{ device.name }}</a></h3>
+                <span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span>
+            </div>
+            <dl class="meta-grid">
+                <dt>Enabled</dt>
+                <dd>{{ 'yes' if device.enabled else 'no' }}</dd>
+                <dt>Host</dt>
+                <dd>{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</dd>
+                <dt>Type</dt>
+                <dd>{{ device.device_type }}</dd>
+                <dt>Protocols</dt>
+                <dd>{{ device.protocol_summary }}</dd>
+                <dt>Last poll</dt>
+                <dd>{{ device.last_poll.timestamp_utc|format_ts if device.last_poll else 'No polls yet' }}</dd>
+                <dt>Last success</dt>
+                <dd>{{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'None' }}</dd>
+                <dt>Last data read</dt>
+                <dd>{{ device.last_successful_data_read|format_ts if device.last_successful_data_read else 'none' }}</dd>
+                <dt>Response time</dt>
+                <dd>{{ device.response_time_ms ~ ' ms' if device.response_time_ms is not none else 'n/a' }}</dd>
+                <dt>Auth</dt>
+                <dd>{{ device.auth_type }} / {{ device.credentials_expectation }}</dd>
+                <dt>Settings support</dt>
+                <dd>{{ device.settings_read_support_state }}</dd>
+                <dt>Measurement support</dt>
+                <dd>{{ device.measurement_read_support_state }}</dd>
+                <dt>Raw payload</dt>
+                <dd>{{ 'available' if device.raw_payload_available else 'none yet' }}</dd>
+                <dt>Metrics</dt>
+                <dd>{{ device.normalized_metrics_count }}</dd>
+                <dt>Last error</dt>
+                <dd>{{ device.last_error or 'None' }}</dd>
+            </dl>
+            {% set dashboard_device = (dashboard.devices | selectattr('name', 'equalto', device.name) | list | first) %}
+            <h4>Latest values</h4>
+            {% if dashboard_device and dashboard_device.latest_measurements %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Value</th>
+                        <th>Unit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for measurement in dashboard_device.latest_measurements %}
+                    <tr>
+                        <td>{{ measurement.metric_name }}</td>
+                        <td>{{ "%.2f"|format(measurement.metric_value) }}</td>
+                        <td>{{ measurement.unit or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="muted">No normalized measurements stored yet.</p>
+            {% endif %}
+            <p class="tiny">{{ device.mapping_note }}</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Integration Gaps And Opportunities</h2>
+    {% if integration_gaps %}
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Category</th>
+                <th>Severity</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gap in integration_gaps %}
+            <tr>
+                <td>{{ gap.device_name }}</td>
+                <td>{{ gap.gap_type }}</td>
+                <td><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span></td>
+                <td>{{ gap.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No integration gaps detected right now.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <h2>Recent Alerts</h2>
+        <a href="{{ url_for('web.alerts') }}">Open all alerts</a>
+    </div>
+    {% if dashboard.recent_alerts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time UTC</th>
+                <th>Device</th>
+                <th>Severity</th>
+                <th>Rule</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+                <tbody>
+                    {% for alert in dashboard.recent_alerts %}
+                    <tr>
+                <td>{{ alert.timestamp_utc|format_ts }}</td>
+                <td>{{ alert.device_name }}</td>
+                <td><span class="badge severity-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td>{{ alert.rule_name }}</td>
+                <td>{{ alert.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No alerts stored yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

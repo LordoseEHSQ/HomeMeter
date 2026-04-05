@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Configuration</p>
+            <h2>Config health</h2>
+        </div>
+        <span class="badge status-{{ config_validation.status }}">{{ config_validation.status }}</span>
+    </div>
+    <p class="muted">Display timezone: {{ time_settings.display_timezone }}. Display format: {{ time_settings.display_format }}.</p>
+    <p class="muted">Validation findings are shown exactly as detected. Warnings do not imply failure, but they do mean the app should not pretend certainty.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Scope</th>
+                <th>Key path</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in config_validation.findings %}
+            <tr>
+                <td><span class="badge severity-{{ finding.severity }}">{{ finding.severity }}</span></td>
+                <td>{{ finding.scope }}</td>
+                <td>{{ finding.key_path }}</td>
+                <td>{{ finding.message }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4">No config findings.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Loaded config</h2>
+    <pre>{{ config_data | tojson(indent=2) }}</pre>
+</section>
+{% endblock %}

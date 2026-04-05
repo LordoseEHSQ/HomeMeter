@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Operations</p>
+            <h2>Settings and device operations</h2>
+        </div>
+        <div class="inline-actions">
+            <form method="post" action="{{ url_for('web.reload_config') }}">
+                <button type="submit" class="button">Reload Config</button>
+            </form>
+            <form method="post" action="{{ url_for('web.check_time') }}">
+                <button type="submit" class="button">Check Reference Time</button>
+            </form>
+            <form method="post" action="{{ url_for('web.run_diagnostics') }}">
+                <button type="submit" class="button button-primary">Run Diagnostics Now</button>
+            </form>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Type</th>
+                <th>Enabled</th>
+                <th>Host</th>
+                <th>Credentials</th>
+                <th>Last attempt</th>
+                <th>Last success</th>
+                <th>Last data read</th>
+                <th>Response</th>
+                <th>Status</th>
+                <th>Protocols</th>
+                <th>Settings support</th>
+                <th>Measurement support</th>
+                <th>Raw</th>
+                <th>Metrics</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device in device_operations %}
+            <tr>
+                <td><a href="{{ url_for('web.device_detail', device_name=device.name) }}">{{ device.name }}</a></td>
+                <td>{{ device.device_type }}</td>
+                <td>{{ 'yes' if device.enabled else 'no' }}</td>
+                <td>{{ device.host }}{% if device.port %}:{{ device.port }}{% endif %}</td>
+                <td>{{ device.auth_type }} / {{ device.credentials_expectation }}</td>
+                <td>{{ device.last_poll.timestamp_utc|format_ts if device.last_poll else 'none' }}</td>
+                <td>{{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'none' }}</td>
+                <td>{{ device.last_successful_data_read|format_ts if device.last_successful_data_read else 'none' }}</td>
+                <td>{{ device.response_time_ms ~ ' ms' if device.response_time_ms is not none else 'n/a' }}</td>
+                <td><span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span></td>
+                <td>{{ device.protocol_summary }}</td>
+                <td>{{ device.settings_read_support_state }}</td>
+                <td>{{ device.measurement_read_support_state }}</td>
+                <td>{{ 'yes' if device.raw_payload_available else 'no' }}</td>
+                <td>{{ device.normalized_metrics_count }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('web.test_connection', device_name=device.name) }}">
+                        <button type="submit" class="button">Test Connection</button>
+                    </form>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="15" class="sub-row">
+                    <strong>Collector note:</strong> {{ device.mapping_note }}
+                    {% if device.config_findings %}
+                    <span class="muted"> Config findings:
+                    {% for finding in device.config_findings %}
+                        [{{ finding.severity }}] {{ finding.message }}
+                    {% endfor %}
+                    </span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if cfos_protocol_statuses %}
+<section class="panel">
+    <h2>cFos protocol surfaces</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Surface</th>
+                <th>Enabled</th>
+                <th>Host</th>
+                <th>Port</th>
+                <th>Configured</th>
+                <th>Reachable</th>
+                <th>Auth</th>
+                <th>Data</th>
+                <th>Implementation</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for surface in cfos_protocol_statuses %}
+            <tr>
+                <td>{{ surface.surface }}</td>
+                <td>{{ 'yes' if surface.enabled else 'no' }}</td>
+                <td>{{ surface.host }}</td>
+                <td>{{ surface.port }}</td>
+                <td>{{ 'yes' if surface.configured else 'no' }}</td>
+                <td>{{ surface.reachable if surface.reachable is not none else 'unknown' }}</td>
+                <td>{{ surface.auth_status }}</td>
+                <td>{{ surface.data_status }}</td>
+                <td>{{ surface.implementation_state }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('web.test_protocol', device_name='cfos', surface=surface.surface) }}">
+                        <button type="submit" class="button">Test Path</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<section class="panel">
+    <h2>Integration gaps</h2>
+    {% if integration_gaps %}
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Type</th>
+                <th>Severity</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gap in integration_gaps %}
+            <tr>
+                <td>{{ gap.device_name }}</td>
+                <td>{{ gap.gap_type }}</td>
+                <td><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span></td>
+                <td>{{ gap.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No explicit integration gaps detected.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Time settings and reference time diagnostics</h2>
+    <dl class="meta-grid">
+        <dt>Display timezone</dt>
+        <dd>{{ time_settings.display_timezone }}</dd>
+        <dt>Display format</dt>
+        <dd>{{ time_settings.display_format }}</dd>
+        <dt>Reference checking</dt>
+        <dd>{{ 'enabled' if time_status.enabled else 'disabled' }}</dd>
+        <dt>NTP servers</dt>
+        <dd>{{ time_status.servers|join(', ') if time_status.servers else 'none configured' }}</dd>
+        <dt>Last attempt</dt>
+        <dd>{{ time_status.last_attempt_utc|format_ts_detail if time_status.last_attempt_utc else 'never checked' }}</dd>
+        <dt>Last success</dt>
+        <dd>{{ time_status.last_success_utc|format_ts_detail if time_status.last_success_utc else 'none' }}</dd>
+        <dt>Drift</dt>
+        <dd>{{ time_status.last_drift_seconds ~ ' s' if time_status.last_drift_seconds is not none else 'not measured' }}</dd>
+        <dt>Within tolerance</dt>
+        <dd>
+            {% if time_status.within_tolerance is none %}
+            unknown
+            {% else %}
+            {{ 'yes' if time_status.within_tolerance else 'no' }}
+            {% endif %}
+        </dd>
+        <dt>Last error</dt>
+        <dd>{{ time_status.last_error or 'none' }}</dd>
+        <dt>Implementation note</dt>
+        <dd>{{ time_status.implementation_note }}</dd>
+    </dl>
+</section>
+
+<section class="panel">
+    <h2>Config snapshot</h2>
+    <pre>{{ config_data | tojson(indent=2) }}</pre>
+</section>
+{% endblock %}

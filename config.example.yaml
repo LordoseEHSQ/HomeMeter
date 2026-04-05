@@ -1,0 +1,83 @@
+app:
+  host: 127.0.0.1
+  port: 5000
+  debug: false
+
+polling:
+  interval_seconds: 10
+  connect_timeout_seconds: 3
+  read_timeout_seconds: 6
+  history_limit: 100
+
+storage:
+  sqlite_path: homemeter.db
+
+time:
+  display_timezone: Europe/Berlin
+  display_format: "%d.%m.%Y %H:%M:%S"
+  ntp:
+    enabled: true
+    servers:
+      - 0.de.pool.ntp.org
+      - 1.de.pool.ntp.org
+      - 2.de.pool.ntp.org
+    timeout_seconds: 2
+    drift_warning_seconds: 2
+
+devices:
+  cfos:
+    enabled: true
+    name: cfos
+    base_url: "http://192.168.50.139"
+    status_path: "/"
+    preferred_protocols:
+      - http
+      - mqtt
+    auth:
+      type: basic
+      username: "admin"
+      password: "CHANGE_ME"
+      token: ""
+    protocols:
+      http:
+        enabled: true
+      mqtt:
+        enabled: false
+        host: "192.168.50.139"
+        port: 1883
+        topic_prefix: "cfos"
+      modbus:
+        enabled: false
+        host: "192.168.50.139"
+        port: 502
+      sunspec:
+        enabled: false
+        host: "192.168.50.139"
+        port: 1502
+    timeout_seconds: 5
+  easee:
+    enabled: true
+    name: easee
+    base_url: "http://192.168.50.10"
+    status_path: "/"
+    auth:
+      type: none
+      username: ""
+      password: ""
+      token: ""
+    timeout_seconds: 5
+  kostal:
+    enabled: true
+    name: kostal
+    host: "192.168.1.17"
+    port: 1502
+    protocol: modbus_tcp
+    unit_id: 71
+    modbus_byte_order: CDAB
+    sunspec_byte_order: ABCD
+    auth:
+      type: none
+      username: ""
+      password: ""
+      token: ""
+    timeout_seconds: 5

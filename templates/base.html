@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HomeMeter Diagnostics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-mark">HM</div>
+                <div>
+                    <h1>HomeMeter</h1>
+                    <p>Diagnostics operations dashboard</p>
+                </div>
+            </div>
+            <nav class="main-nav">
+                <a href="{{ url_for('web.dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('web.system_status') }}">System Status</a>
+                <a href="{{ url_for('web.settings') }}">Settings</a>
+                <a href="{{ url_for('web.settings_devices') }}">Settings / Devices</a>
+                <a href="{{ url_for('web.settings_database') }}">Settings / Database</a>
+                <a href="{{ url_for('web.settings_config_health') }}">Settings / Config</a>
+                <a href="{{ url_for('web.settings_time') }}">Settings / Time</a>
+                <a href="{{ url_for('web.config_health') }}">Config Health</a>
+                <a href="{{ url_for('web.database_inspection') }}">Database</a>
+                <a href="{{ url_for('web.alerts') }}">Alerts</a>
+            </nav>
+            <div class="sidebar-actions">
+                <form method="post" action="{{ url_for('web.run_diagnostics') }}">
+                    <button type="submit" class="button button-primary">Run Diagnostics Now</button>
+                </form>
+                <form method="post" action="{{ url_for('web.check_time') }}">
+                    <button type="submit" class="button">Check Reference Time</button>
+                </form>
+                <form method="post" action="{{ url_for('web.reload_config') }}">
+                    <button type="submit" class="button">Reload Config</button>
+                </form>
+            </div>
+        </aside>
+        <main class="page">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <section class="flash-stack">
+                {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </section>
+            {% endif %}
+            {% endwith %}
+        {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

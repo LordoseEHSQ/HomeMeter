@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <h2>Alerts</h2>
+        <a href="{{ url_for('web.dashboard') }}">Back to dashboard</a>
+    </div>
+    <p class="muted">Recent rule-based plausibility and operational alerts stored in SQLite.</p>
+    {% if alerts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time UTC</th>
+                <th>Device</th>
+                <th>Severity</th>
+                <th>Rule</th>
+                <th>Message</th>
+                <th>Context</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alert in alerts %}
+            <tr>
+                <td>{{ alert.timestamp_utc|format_ts_detail }}</td>
+                <td>{{ alert.device_name }}</td>
+                <td><span class="badge severity-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td>{{ alert.rule_name }}</td>
+                <td>{{ alert.message }}</td>
+                <td><code>{{ alert.context_json }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No alerts generated yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

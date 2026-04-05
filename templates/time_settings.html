@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Time</p>
+            <h2>Time settings and diagnostics</h2>
+        </div>
+        <form method="post" action="{{ url_for('web.check_time') }}">
+            <button type="submit" class="button">Check Reference Time</button>
+        </form>
+    </div>
+    <dl class="meta-grid">
+        <dt>Display timezone</dt>
+        <dd>{{ time_settings.display_timezone }}</dd>
+        <dt>Display format</dt>
+        <dd>{{ time_settings.display_format }}</dd>
+        <dt>Reference checking</dt>
+        <dd>{{ 'enabled' if time_status.enabled else 'disabled' }}</dd>
+        <dt>Configured servers</dt>
+        <dd>{{ time_status.servers|join(', ') if time_status.servers else 'none configured' }}</dd>
+        <dt>Last attempt</dt>
+        <dd>{{ time_status.last_attempt_utc|format_ts_detail if time_status.last_attempt_utc else 'never checked' }}</dd>
+        <dt>Last success</dt>
+        <dd>{{ time_status.last_success_utc|format_ts_detail if time_status.last_success_utc else 'none' }}</dd>
+        <dt>Checked server</dt>
+        <dd>{{ time_status.checked_server or 'n/a' }}</dd>
+        <dt>Detected drift</dt>
+        <dd>{{ time_status.last_drift_seconds ~ ' s' if time_status.last_drift_seconds is not none else 'not measured' }}</dd>
+        <dt>Within tolerance</dt>
+        <dd>
+            {% if time_status.within_tolerance is none %}
+            unknown
+            {% else %}
+            {{ 'yes' if time_status.within_tolerance else 'no' }}
+            {% endif %}
+        </dd>
+        <dt>Last error</dt>
+        <dd>{{ time_status.last_error or 'none' }}</dd>
+        <dt>Scope note</dt>
+        <dd>{{ time_status.implementation_note }}</dd>
+    </dl>
+</section>
+
+<section class="panel">
+    <h2>Relevant config findings</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Scope</th>
+                <th>Key</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in config_validation.findings if finding.scope == 'time' %}
+            <tr>
+                <td><span class="badge severity-{{ finding.severity }}">{{ finding.severity }}</span></td>
+                <td>{{ finding.scope }}</td>
+                <td>{{ finding.key_path }}</td>
+                <td>{{ finding.message }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4">No time-specific config findings.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

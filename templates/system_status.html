@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">System Health</p>
+        <h2>Current operational status</h2>
+        <p class="muted">This summary combines config health, collector status, recent failures, stored alerts and storage activity.</p>
+    </div>
+    <div class="hero-status">
+        <span class="badge status-{{ system_health.status }}">{{ system_health.status }}</span>
+        <dl class="compact-stats">
+            <div><dt>Config</dt><dd>{{ system_health.config_status }}</dd></div>
+            <div><dt>High alerts</dt><dd>{{ system_health.high_alert_count }}</dd></div>
+            <div><dt>Unhealthy devices</dt><dd>{{ system_health.unhealthy_device_count }}</dd></div>
+            <div><dt>Storage</dt><dd>{{ system_health.storage_status }}</dd></div>
+            <div><dt>Timezone</dt><dd>{{ time_settings.display_timezone }}</dd></div>
+        </dl>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="stat-card">
+        <p class="eyebrow">Alerts</p>
+        <h3>{{ system_health.alert_count }}</h3>
+        <p class="muted">Recent alerts in the database</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">Failures</p>
+        <h3>{{ system_health.recent_failures }}</h3>
+        <p class="muted">Recent poll failures across devices</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">Config findings</p>
+        <h3>{{ config_validation.findings|length }}</h3>
+        <p class="muted">Warnings and errors in the active config</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">Storage activity</p>
+        <h3>{{ database_report.storage_activity.poll_event_count }}</h3>
+        <p class="muted">{{ database_report.storage_activity.message }}</p>
+    </article>
+</section>
+
+<section class="panel">
+    <h2>Integration gaps and implementation gaps</h2>
+    {% if integration_gaps %}
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Category</th>
+                <th>Severity</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gap in integration_gaps %}
+            <tr>
+                <td>{{ gap.device_name }}</td>
+                <td>{{ gap.gap_type }}</td>
+                <td><span class="badge severity-{{ gap.severity }}">{{ gap.severity }}</span></td>
+                <td>{{ gap.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No system-level gaps are currently flagged.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Device health breakdown</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Last attempt</th>
+                <th>Last success</th>
+                <th>Recent failures</th>
+                <th>Metrics</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device in device_operations %}
+            <tr>
+                <td>{{ device.name }}</td>
+                <td><span class="badge status-{{ device.collector_status }}">{{ device.collector_status.replace('_', ' ') }}</span></td>
+                <td>{{ device.last_poll.timestamp_utc|format_ts if device.last_poll else 'none' }}</td>
+                <td>{{ device.last_successful_poll.timestamp_utc|format_ts if device.last_successful_poll else 'none' }}</td>
+                <td>{{ device.recent_failure_count }}</td>
+                <td>{{ device.normalized_metrics_count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <h2>Time health</h2>
+        <form method="post" action="{{ url_for('web.check_time') }}">
+            <button type="submit" class="button">Check Reference Time</button>
+        </form>
+    </div>
+    <dl class="meta-grid">
+        <dt>Display timezone</dt>
+        <dd>{{ time_settings.display_timezone }}</dd>
+        <dt>Display format</dt>
+        <dd>{{ time_settings.display_format }}</dd>
+        <dt>Reference checking</dt>
+        <dd>{{ 'enabled' if time_status.enabled else 'disabled' }}</dd>
+        <dt>Configured servers</dt>
+        <dd>{{ time_status.servers|join(', ') if time_status.servers else 'none configured' }}</dd>
+        <dt>Last attempt</dt>
+        <dd>{{ time_status.last_attempt_utc|format_ts_detail if time_status.last_attempt_utc else 'never checked' }}</dd>
+        <dt>Last success</dt>
+        <dd>{{ time_status.last_success_utc|format_ts_detail if time_status.last_success_utc else 'none' }}</dd>
+        <dt>Checked server</dt>
+        <dd>{{ time_status.checked_server or 'n/a' }}</dd>
+        <dt>Detected drift</dt>
+        <dd>{{ time_status.last_drift_seconds ~ ' s' if time_status.last_drift_seconds is not none else 'not measured' }}</dd>
+        <dt>Within tolerance</dt>
+        <dd>
+            {% if time_status.within_tolerance is none %}
+            unknown
+            {% else %}
+            {{ 'yes' if time_status.within_tolerance else 'no' }}
+            {% endif %}
+        </dd>
+        <dt>Last error</dt>
+        <dd>{{ time_status.last_error or 'none' }}</dd>
+        <dt>Scope note</dt>
+        <dd>{{ time_status.implementation_note }}</dd>
+    </dl>
+</section>
+{% endblock %}

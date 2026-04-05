@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">Storage</p>
+            <h2>Database inspection</h2>
+        </div>
+        <span class="badge status-{{ database_report.storage_activity.status }}">{{ database_report.storage_activity.status }}</span>
+    </div>
+    <dl class="meta-grid">
+        <dt>SQLite path</dt>
+        <dd>{{ database_report.db_path }}</dd>
+        <dt>Display timezone</dt>
+        <dd>{{ time_settings.display_timezone }}</dd>
+        <dt>File exists</dt>
+        <dd>{{ 'yes' if database_report.file_exists else 'no' }}</dd>
+        <dt>File size</dt>
+        <dd>{{ database_report.file_size_bytes }} bytes</dd>
+        <dt>Storage activity</dt>
+        <dd>{{ database_report.storage_activity.message }}</dd>
+        <dt>Raw payload rows</dt>
+        <dd>{{ database_report.raw_payload_rows }}</dd>
+    </dl>
+</section>
+
+<section class="stats-grid">
+    {% for table_name, table in database_report.tables.items() %}
+    <article class="stat-card">
+        <p class="eyebrow">{{ table_name }}</p>
+        <h3>{{ table.row_count }}</h3>
+        <p class="tiny">Oldest: {{ table.oldest_ts|format_ts_detail if table.oldest_ts else 'n/a' }}</p>
+        <p class="tiny">Newest: {{ table.newest_ts|format_ts_detail if table.newest_ts else 'n/a' }}</p>
+    </article>
+    {% endfor %}
+    <article class="stat-card">
+        <p class="eyebrow">cFos measurements</p>
+        <h3>{{ 'yes' if database_report.device_measurement_presence.cfos else 'no' }}</h3>
+        <p class="tiny">Any cFos normalized measurements stored</p>
+    </article>
+    <article class="stat-card">
+        <p class="eyebrow">KOSTAL measurements</p>
+        <h3>{{ 'yes' if database_report.device_measurement_presence.kostal else 'no' }}</h3>
+        <p class="tiny">Any KOSTAL normalized measurements stored</p>
+    </article>
+</section>
+
+{% for table_name, rows in database_report.latest_rows.items() %}
+<section class="panel">
+    <h2>Latest rows: {{ table_name }}</h2>
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    {% for key in rows[0].keys() %}
+                    <th>{{ key }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    {% for key, value in row.items() %}
+                    <td>{{ (key, value)|format_cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted">No rows stored in this table yet.</p>
+    {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="section-head">
+        <h2>Device: {{ device.name }}</h2>
+        <a href="{{ url_for('web.dashboard') }}">Back to dashboard</a>
+    </div>
+    <p><span class="badge status-{{ operation.collector_status }}">{{ operation.collector_status.replace('_', ' ') }}</span></p>
+    <dl class="meta-grid">
+        <dt>Type</dt>
+        <dd>{{ operation.device_type }}</dd>
+        <dt>Enabled</dt>
+        <dd>{{ 'yes' if operation.enabled else 'no' }}</dd>
+        <dt>Host</dt>
+        <dd>{{ operation.host }}{% if operation.port %}:{{ operation.port }}{% endif %}</dd>
+        <dt>Protocols</dt>
+        <dd>{{ operation.protocol_summary }}</dd>
+        <dt>Credentials</dt>
+        <dd>{{ operation.auth_type }} / {{ operation.credentials_expectation }}</dd>
+        <dt>Last poll</dt>
+        <dd>{{ device.last_poll.timestamp_utc|format_ts_detail if device.last_poll else 'No polls yet' }}</dd>
+        <dt>Last poll status</dt>
+        <dd>{{ device.last_poll.status if device.last_poll else 'n/a' }}</dd>
+        <dt>Last success</dt>
+        <dd>{{ device.last_successful_poll.timestamp_utc|format_ts_detail if device.last_successful_poll else 'None' }}</dd>
+        <dt>Last data read</dt>
+        <dd>{{ operation.last_successful_data_read|format_ts_detail if operation.last_successful_data_read else 'none' }}</dd>
+        <dt>Settings-read support</dt>
+        <dd>{{ operation.settings_read_support_state }}</dd>
+        <dt>Measurement-read support</dt>
+        <dd>{{ operation.measurement_read_support_state }}</dd>
+    </dl>
+    <p class="muted">{{ operation.mapping_note }}</p>
+    <form method="post" action="{{ url_for('web.test_connection', device_name=device.name) }}">
+        <button type="submit" class="button button-primary">Test Connection</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h3>Device Specs</h3>
+    <pre>{{ device_specs | tojson(indent=2) }}</pre>
+</section>
+
+{% if cfos_protocol_statuses %}
+<section class="panel">
+    <h3>cFos Protocol Surface Diagnostics</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Surface</th>
+                <th>Configured</th>
+                <th>Reachable</th>
+                <th>Auth</th>
+                <th>Data</th>
+                <th>Settings support</th>
+                <th>Measurement support</th>
+                <th>Implementation</th>
+                <th>Last attempt</th>
+                <th>Last success</th>
+                <th>Last error</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for surface in cfos_protocol_statuses %}
+            <tr>
+                <td>{{ surface.surface }}</td>
+                <td>{{ 'yes' if surface.configured else 'no' }}</td>
+                <td>{{ surface.reachable if surface.reachable is not none else 'unknown' }}</td>
+                <td>{{ surface.auth_status }}</td>
+                <td>{{ surface.data_status }}</td>
+                <td>{{ surface.settings_read_support_state }}</td>
+                <td>{{ surface.measurement_read_support_state }}</td>
+                <td>{{ surface.implementation_state }}</td>
+                <td>{{ surface.last_attempt_utc|format_ts_detail if surface.last_attempt_utc else 'none' }}</td>
+                <td>{{ surface.last_success_utc|format_ts_detail if surface.last_success_utc else 'none' }}</td>
+                <td>{{ surface.last_error or 'none' }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('web.test_protocol', device_name='cfos', surface=surface.surface) }}">
+                        <button type="submit" class="button">Test Path</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<section class="panel">
+    <h3>Recent Polls</h3>
+    {% if device.poll_history %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time UTC</th>
+                <th>Status</th>
+                <th>Success</th>
+                <th>Duration</th>
+                <th>HTTP</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in device.poll_history %}
+            <tr>
+                <td>{{ event.timestamp_utc|format_ts_detail }}</td>
+                <td>{{ event.status }}</td>
+                <td>{{ 'yes' if event.success else 'no' }}</td>
+                <td>{{ event.duration_ms }} ms</td>
+                <td>{{ event.http_status if event.http_status is not none else '-' }}</td>
+                <td>{{ event.error_message or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No poll events yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>Recent Measurements</h3>
+    {% if device.measurements %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time UTC</th>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Unit</th>
+                <th>Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in device.measurements %}
+            <tr>
+                <td>{{ measurement.timestamp_utc|format_ts_detail }}</td>
+                <td>{{ measurement.metric_name }}</td>
+                <td>{{ "%.2f"|format(measurement.metric_value) }}</td>
+                <td>{{ measurement.unit or '-' }}</td>
+                <td>{{ measurement.source_type }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No measurements stored yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>Latest Raw Payload</h3>
+    {% if device.raw_payload %}
+    <p><strong>Timestamp:</strong> {{ device.raw_payload.timestamp_utc|format_ts_detail }}</p>
+    <p><strong>Status:</strong> {{ device.raw_payload.status }}</p>
+    <pre>{{ device.raw_payload.raw_payload }}</pre>
+    {% else %}
+    <p class="muted">No raw payload captured yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>Recent Errors</h3>
+    {% if device.recent_errors %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time UTC</th>
+                <th>Status</th>
+                <th>HTTP</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for error in device.recent_errors %}
+            <tr>
+                <td>{{ error.timestamp_utc|format_ts_detail }}</td>
+                <td>{{ error.status }}</td>
+                <td>{{ error.http_status if error.http_status is not none else '-' }}</td>
+                <td>{{ error.error_message or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No recent errors.</p>
+    {% endif %}
+</section>
+{% endblock %}
