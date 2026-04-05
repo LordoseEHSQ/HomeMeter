@@ -10,8 +10,10 @@ def test_device_specs_parse_cfos_and_kostal_details(sample_config_dict):
     specs = build_device_specs(sample_config_dict)
     assert specs["cfos"]["device_type"] == "cfos_wallbox_booster"
     assert specs["cfos"]["protocols"]["http"]["enabled"] is True
+    assert specs["cfos"]["auth_model"]["password_configured"] is True
     assert specs["kostal"]["unit_id"] == 71
     assert specs["kostal"]["modbus_byte_order"] == "CDAB"
+    assert specs["kostal"]["auth_model"]["role"] == "plant_owner"
 
 
 def test_gap_detection_flags_reachable_without_metrics(store, sample_config_dict):

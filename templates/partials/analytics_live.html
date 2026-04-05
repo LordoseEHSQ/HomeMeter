@@ -1,0 +1,188 @@
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.energy.title') }}</p>
+            <h2>{{ tr('analytics.section.energy.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.energy.subtitle') }}</p>
+        </div>
+        <span class="badge status-{{ analytics.coverage.status }}">{{ tr('analytics.persistence.status_badge') }}</span>
+    </div>
+    <div class="analytics-kpi-grid">
+        {% for card in analytics.primary_metrics.energy %}
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card-head">
+                <h3>{{ card.label }}</h3>
+                <span class="badge status-{{ card.classification }}">{{ tr('classification.' ~ card.classification) }}</span>
+            </div>
+            <p class="analytics-kpi-value">
+                {% if card.value is none %}
+                -
+                {% elif card.unit == '%' %}
+                {{ "%.1f"|format(card.value) }}%
+                {% else %}
+                {{ (card.value, card.unit)|format_metric_number }} <span>{{ (card.value, card.unit)|format_metric_unit }}</span>
+                {% endif %}
+            </p>
+            <p class="muted">{{ card.message }}</p>
+            <p class="tiny">{{ tr('analytics.table.coverage') }}: {{ "%.0f"|format(card.source_coverage * 100) }}% | {{ tr('analytics.table.confidence') }}: {{ tr('confidence.' ~ card.confidence_state) }}</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.ratios.title') }}</p>
+            <h2>{{ tr('analytics.section.ratios.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.ratios.subtitle') }}</p>
+        </div>
+    </div>
+    <div class="analytics-kpi-grid analytics-kpi-grid-compact">
+        {% for card in analytics.primary_metrics.ratios %}
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card-head">
+                <h3>{{ card.label }}</h3>
+                <span class="badge status-{{ card.classification }}">{{ tr('classification.' ~ card.classification) }}</span>
+            </div>
+            <p class="analytics-kpi-value">
+                {% if card.value is none %}
+                -
+                {% elif card.unit == '%' %}
+                {{ "%.1f"|format(card.value) }}%
+                {% else %}
+                {{ (card.value, card.unit)|format_metric_number }} <span>{{ (card.value, card.unit)|format_metric_unit }}</span>
+                {% endif %}
+            </p>
+            <p class="tiny">{{ tr('analytics.table.coverage') }}: {{ "%.0f"|format(card.source_coverage * 100) }}% | {{ tr('analytics.table.confidence') }}: {{ tr('confidence.' ~ card.confidence_state) }}</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.trends.title') }}</p>
+            <h2>{{ tr('analytics.section.trends.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.trends.subtitle') }}</p>
+        </div>
+    </div>
+    <div class="analytics-chart-stack">
+        {% for chart in analytics.chart_series %}
+        <article class="analytics-chart-card">
+            <div class="analytics-chart-head">
+                <div>
+                    <h3>{{ chart.label }}</h3>
+                    <p class="muted">{{ tr('analytics.chart.minute_average') }} | {{ tr('analytics.chart.unit') }}: {{ chart.display_unit if not chart.empty else '-' }}</p>
+                </div>
+                {% if not chart.empty %}
+                <div class="analytics-chart-stats">
+                    <span class="badge status-healthy">{{ chart.latest_bucket_utc|format_ts }}</span>
+                    <span class="tiny">{{ tr('analytics.chart.latest') }}: {{ (chart.latest_value, chart.latest_unit)|format_metric_number }} {{ (chart.latest_value, chart.latest_unit)|format_metric_unit }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% if chart.empty %}
+            <p class="muted">{{ chart.message }}</p>
+            {% else %}
+            <svg viewBox="0 0 {{ chart.chart_width }} {{ chart.chart_height }}" class="analytics-chart" preserveAspectRatio="none" aria-label="{{ chart.label }}">
+                {% for tick in chart.y_ticks %}
+                <line class="chart-grid-line" x1="{{ chart.plot_left }}" y1="{{ tick.y }}" x2="{{ chart.plot_right }}" y2="{{ tick.y }}"></line>
+                <text class="chart-axis-text chart-axis-text-left" x="8" y="{{ tick.y + 4 }}">{{ tick.label }}</text>
+                {% endfor %}
+                <line class="chart-axis-line" x1="{{ chart.plot_left }}" y1="{{ chart.baseline_y }}" x2="{{ chart.plot_right }}" y2="{{ chart.baseline_y }}"></line>
+                <polyline class="chart-series-line" points="{{ chart.points }}"></polyline>
+                {% for tick in chart.x_ticks %}
+                <line class="chart-tick-line" x1="{{ tick.x }}" y1="{{ chart.baseline_y }}" x2="{{ tick.x }}" y2="{{ chart.baseline_y + 6 }}"></line>
+                <text class="chart-axis-text chart-axis-text-bottom" x="{{ tick.x }}" y="{{ chart.baseline_y + 22 }}" text-anchor="middle">{{ tick.label }}</text>
+                {% endfor %}
+            </svg>
+            <div class="analytics-chart-footer">
+                <span><strong>{{ tr('analytics.chart.time_axis') }}:</strong> {{ tr('analytics.chart.local_time') }}</span>
+                <span><strong>{{ tr('analytics.chart.y_axis') }}:</strong> {{ chart.display_unit }}</span>
+                <span><strong>{{ tr('analytics.chart.range') }}:</strong> {{ (chart.range_min, chart.display_unit)|format_metric_number }} - {{ (chart.range_max, chart.display_unit)|format_metric_number }} {{ chart.display_unit }}</span>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.details.title') }}</p>
+            <h2>{{ tr('analytics.section.details.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.details.subtitle') }}</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ tr('analytics.table.metric') }}</th>
+                    <th>{{ tr('analytics.table.value') }}</th>
+                    <th>{{ tr('analytics.table.unit') }}</th>
+                    <th>{{ tr('analytics.table.classification') }}</th>
+                    <th>{{ tr('analytics.table.confidence') }}</th>
+                    <th>{{ tr('analytics.table.coverage') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in analytics.all_kpis %}
+                <tr>
+                    <td>{{ item.label }}</td>
+                    <td>
+                        {% if item.value is none %}
+                        -
+                        {% elif item.unit == '%' %}
+                        {{ "%.1f"|format(item.value) }}%
+                        {% else %}
+                        {{ (item.value, item.unit)|format_metric_number }}
+                        {% endif %}
+                    </td>
+                    <td>{{ item.unit }}</td>
+                    <td>{{ tr('classification.' ~ item.classification) }}</td>
+                    <td>{{ tr('confidence.' ~ item.confidence_state) }}</td>
+                    <td>{{ "%.0f"|format(item.source_coverage * 100) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.interpretation.title') }}</p>
+            <h2>{{ tr('analytics.section.interpretation.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.interpretation.subtitle') }}</p>
+        </div>
+    </div>
+    <div class="analytics-help-stack">
+        {% for item in analytics.interpretation %}
+        <article class="analytics-help-card">
+            <h3>{{ item.title }}</h3>
+            <p class="muted">{{ item.text }}</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel analytics-section">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.persistence.title') }}</p>
+            <h2>{{ tr('analytics.section.persistence.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.persistence.subtitle') }}</p>
+        </div>
+    </div>
+    <dl class="analytics-meta-grid">
+        <div><dt>{{ tr('analytics.persistence.latest_raw') }}</dt><dd>{{ analytics.persistence_status.latest_raw_measurement_utc|format_ts_detail if analytics.persistence_status.latest_raw_measurement_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('analytics.persistence.latest_semantic') }}</dt><dd>{{ analytics.persistence_status.latest_semantic_metric_utc|format_ts_detail if analytics.persistence_status.latest_semantic_metric_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('analytics.persistence.latest_rollup') }}</dt><dd>{{ analytics.persistence_status.latest_rollup_utc|format_ts_detail if analytics.persistence_status.latest_rollup_utc else tr('common.none_yet') }}</dd></div>
+        <div><dt>{{ tr('analytics.persistence.latest_kpi') }}</dt><dd>{{ analytics.persistence_status.latest_kpi_summary_utc|format_ts_detail if analytics.persistence_status.latest_kpi_summary_utc else tr('common.none_yet') }}</dd></div>
+    </dl>
+</section>

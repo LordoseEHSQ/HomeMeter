@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>HomeMeter Diagnostics</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
     <div class="app-shell">
@@ -13,34 +14,46 @@
                 <div class="brand-mark">HM</div>
                 <div>
                     <h1>HomeMeter</h1>
-                    <p>Diagnostics operations dashboard</p>
+                    <p>{{ tr('app.subtitle') }}</p>
                 </div>
             </div>
             <nav class="main-nav">
-                <a href="{{ url_for('web.dashboard') }}">Dashboard</a>
-                <a href="{{ url_for('web.system_status') }}">System Status</a>
-                <a href="{{ url_for('web.settings') }}">Settings</a>
-                <a href="{{ url_for('web.settings_devices') }}">Settings / Devices</a>
-                <a href="{{ url_for('web.settings_database') }}">Settings / Database</a>
-                <a href="{{ url_for('web.settings_config_health') }}">Settings / Config</a>
-                <a href="{{ url_for('web.settings_time') }}">Settings / Time</a>
-                <a href="{{ url_for('web.config_health') }}">Config Health</a>
-                <a href="{{ url_for('web.database_inspection') }}">Database</a>
-                <a href="{{ url_for('web.alerts') }}">Alerts</a>
+                <a href="{{ url_for('web.dashboard') }}">{{ tr('nav.dashboard') }}</a>
+                <a href="{{ url_for('web.analytics') }}">{{ tr('nav.analytics') }}</a>
+                <a href="{{ url_for('web.system_status') }}">{{ tr('nav.system') }}</a>
+                <a href="{{ url_for('web.settings') }}">{{ tr('nav.settings') }}</a>
+                <a href="{{ url_for('web.settings_devices') }}">{{ tr('nav.settings_devices') }}</a>
+                <a href="{{ url_for('web.settings_database') }}">{{ tr('nav.settings_database') }}</a>
+                <a href="{{ url_for('web.settings_config_health') }}">{{ tr('nav.settings_config') }}</a>
+                <a href="{{ url_for('web.settings_time') }}">{{ tr('nav.settings_time') }}</a>
+                <a href="{{ url_for('web.config_health') }}">{{ tr('nav.config_health') }}</a>
+                <a href="{{ url_for('web.database_inspection') }}">{{ tr('nav.database') }}</a>
+                <a href="{{ url_for('web.alerts') }}">{{ tr('nav.alerts') }}</a>
             </nav>
+            <div class="language-switch" aria-label="{{ tr('ui.language') }}">
+                <span class="tiny">{{ tr('ui.language') }}</span>
+                <div class="language-switch-actions">
+                    <form method="post" action="{{ url_for('web.set_language', language='de') }}">
+                        <button type="submit" class="button {% if current_language == 'de' %}button-primary{% endif %}">{{ tr('ui.lang_de') }}</button>
+                    </form>
+                    <form method="post" action="{{ url_for('web.set_language', language='en') }}">
+                        <button type="submit" class="button {% if current_language == 'en' %}button-primary{% endif %}">{{ tr('ui.lang_en') }}</button>
+                    </form>
+                </div>
+            </div>
             <div class="sidebar-actions">
                 <form method="post" action="{{ url_for('web.run_diagnostics') }}">
-                    <button type="submit" class="button button-primary">Run Diagnostics Now</button>
+                    <button type="submit" class="button button-primary">{{ tr('actions.run_diagnostics') }}</button>
                 </form>
                 <form method="post" action="{{ url_for('web.check_time') }}">
-                    <button type="submit" class="button">Check Reference Time</button>
+                    <button type="submit" class="button">{{ tr('actions.check_time') }}</button>
                 </form>
                 <form method="post" action="{{ url_for('web.reload_config') }}">
-                    <button type="submit" class="button">Reload Config</button>
+                    <button type="submit" class="button">{{ tr('actions.reload_config') }}</button>
                 </form>
             </div>
         </aside>
-        <main class="page">
+        <main class="page {% block page_class %}{% endblock %}">
             {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
             <section class="flash-stack">
@@ -53,5 +66,6 @@
         {% block content %}{% endblock %}
         </main>
     </div>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

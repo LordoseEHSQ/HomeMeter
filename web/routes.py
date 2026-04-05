@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for
 
+from services.i18n import resolve_language
+
+from services.config_editor import update_config_from_form
 from services.gap_detection import build_integration_gaps
 
 
@@ -11,6 +14,7 @@ def register_routes(app) -> None:
     @blueprint.route("/")
     def dashboard():
         store = current_app.config["STORE"]
+        current_language = resolve_language(session.get("ui_language"))
         validation_result = current_app.config["BUILD_VALIDATION_RESULT"]()
         device_specs = current_app.config["BUILD_DEVICE_SPECS"]()
         device_operations = current_app.config["BUILD_DEVICE_OPERATIONS"](validation_result, device_specs)
@@ -28,6 +32,41 @@ def register_routes(app) -> None:
             system_health=system_health,
             device_operations=device_operations,
             integration_gaps=integration_gaps,
+            analytics=current_app.config["ANALYTICS_SERVICE"].build_dashboard(
+                current_app.config["ANALYTICS_SETTINGS"].get("default_window", "24h"),
+                language=current_language,
+                time_settings=current_app.config["TIME_SETTINGS"],
+            ),
+            time_settings=current_app.config["TIME_SETTINGS"],
+        )
+
+    @blueprint.route("/analytics")
+    def analytics():
+        current_language = resolve_language(session.get("ui_language"))
+        selected_window = request.args.get("window", current_app.config["ANALYTICS_SETTINGS"].get("default_window", "24h"))
+        analytics_view = current_app.config["ANALYTICS_SERVICE"].build_dashboard(
+            selected_window,
+            language=current_language,
+            time_settings=current_app.config["TIME_SETTINGS"],
+        )
+        return render_template(
+            "analytics.html",
+            analytics=analytics_view,
+            time_settings=current_app.config["TIME_SETTINGS"],
+        )
+
+    @blueprint.route("/analytics/partial")
+    def analytics_partial():
+        current_language = resolve_language(session.get("ui_language"))
+        selected_window = request.args.get("window", current_app.config["ANALYTICS_SETTINGS"].get("default_window", "24h"))
+        analytics_view = current_app.config["ANALYTICS_SERVICE"].build_dashboard(
+            selected_window,
+            language=current_language,
+            time_settings=current_app.config["TIME_SETTINGS"],
+        )
+        return render_template(
+            "partials/analytics_live.html",
+            analytics=analytics_view,
             time_settings=current_app.config["TIME_SETTINGS"],
         )
 
@@ -161,6 +200,20 @@ def register_routes(app) -> None:
             flash(f"Failed to reload config: {exc}", "error")
         return redirect(request.referrer or url_for("web.settings"))
 
+    @blueprint.post("/actions/save-settings/<scope>")
+    def save_settings(scope: str):
+        try:
+            updated = update_config_from_form(
+                current_app.config["CONFIG"],
+                scope=scope,
+                form={key: value for key, value in request.form.items()},
+            )
+            current_app.config["PERSIST_RUNTIME_CONFIG"](updated)
+            flash(f"Saved {scope} settings to config.yaml.", "success")
+        except Exception as exc:
+            flash(f"Failed to save {scope} settings: {exc}", "error")
+        return redirect(request.referrer or url_for("web.settings"))
+
     @blueprint.post("/actions/run-diagnostics")
     def run_diagnostics():
         polling_manager = current_app.config["POLLING_MANAGER"]
@@ -190,6 +243,12 @@ def register_routes(app) -> None:
             "success" if status["status"] in {"healthy", "warning"} else "warning",
         )
         return redirect(request.referrer or url_for("web.system_status"))
+
+    @blueprint.post("/actions/set-language/<language>")
+    def set_language(language: str):
+        session["ui_language"] = resolve_language(language)
+        flash(f"UI language set to {session['ui_language']}.", "success")
+        return redirect(request.referrer or url_for("web.dashboard"))
 
     @blueprint.post("/actions/test-protocol/<device_name>/<surface>")
     def test_protocol(device_name: str, surface: str):

@@ -24,6 +24,11 @@ time:
     timeout_seconds: 2
     drift_warning_seconds: 2
 
+analytics:
+  default_window: 24h
+  chart_refresh_seconds: 30
+  rollup_retention_days: 180
+
 devices:
   cfos:
     enabled: true
@@ -38,9 +43,15 @@ devices:
       - http
       - mqtt
     auth:
+      enabled: true
       type: basic
+      credential_source: default_auto
+      default_username: "admin"
+      default_password_variants:
+        - ""
+        - "1234abcd"
       username: "admin"
-      password: "CHANGE_ME"
+      password: ""
       token: ""
     protocols:
       http:
@@ -80,8 +91,17 @@ devices:
     modbus_byte_order: CDAB
     sunspec_byte_order: ABCD
     auth:
-      type: none
-      username: ""
-      password: ""
-      token: ""
+      enabled: false
+      role: plant_owner
+      web_access:
+        enabled: false
+        plant_owner_password: ""
+        installer_service_code: ""
+        installer_master_key: ""
+        username: ""
+        password: ""
+      transport:
+        uses_auth: false
+        username: ""
+        password: ""
     timeout_seconds: 5

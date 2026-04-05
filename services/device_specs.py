@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.kostal_mapping import build_kostal_mapping_profile
+
 
 def build_device_specs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     devices = config.get("devices", {}) or {}
@@ -14,9 +16,20 @@ def build_device_specs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _build_cfos_specs(device_config: dict[str, Any]) -> dict[str, Any]:
     protocols = device_config.get("protocols", {}) or {}
+    auth = device_config.get("auth", {}) or {}
     return {
         "device_type": "cfos_wallbox_booster",
         "preferred_protocols": device_config.get("preferred_protocols", ["http"]),
+        "auth_model": {
+            "enabled": bool(auth.get("enabled", str(auth.get("type", "none")).lower() != "none")),
+            "type": str(auth.get("type", "none")).lower(),
+            "credential_source": str(auth.get("credential_source", "custom")).lower(),
+            "default_username": str(auth.get("default_username", "admin") or "admin"),
+            "default_password_variants": auth.get("default_password_variants", ["", "1234abcd"]),
+            "username_configured": bool(auth.get("username")),
+            "password_configured": bool(auth.get("password")),
+            "token_configured": bool(auth.get("token")),
+        },
         "protocols": {
             "http": {
                 "enabled": bool((protocols.get("http", {}) or {}).get("enabled", True)),
@@ -74,6 +87,7 @@ def _build_easee_specs(device_config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_kostal_specs(device_config: dict[str, Any]) -> dict[str, Any]:
+    auth = device_config.get("auth", {}) or {}
     return {
         "device_type": "kostal_plenticore",
         "protocol": device_config.get("protocol", "modbus_tcp"),
@@ -82,6 +96,13 @@ def _build_kostal_specs(device_config: dict[str, Any]) -> dict[str, Any]:
         "modbus_byte_order": device_config.get("modbus_byte_order", "CDAB"),
         "sunspec_byte_order": device_config.get("sunspec_byte_order", "ABCD"),
         "mapping_state": "partial",
+        "auth_model": {
+            "enabled": bool(auth.get("enabled", False)),
+            "role": str(auth.get("role", "plant_owner")).lower(),
+            "web_access_enabled": bool((auth.get("web_access", {}) or {}).get("enabled", auth.get("enabled", False))),
+            "transport_uses_auth": bool((auth.get("transport", {}) or {}).get("uses_auth", False)),
+        },
+        "mapping_profile": build_kostal_mapping_profile(device_config),
         "preferred_protocols": [device_config.get("protocol", "modbus_tcp")],
         "protocols": {
             "modbus_tcp": {

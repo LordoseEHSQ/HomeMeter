@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from collectors.base import CollectorStatus
+from services.auth import summarize_cfos_auth, summarize_kostal_auth
 from services.config_validation import ConfigValidationResult
+from services.easee_cloud import build_easee_cloud_context
 from storage.sqlite_store import SQLiteStore
 
 
@@ -24,8 +26,15 @@ def build_device_operations_view(
     last_data_read_utc = store.get_last_measurement_timestamp(device_name)
     raw_payload_available = store.has_raw_payload(device_name)
     recent_failures = store.count_recent_failures(device_name, limit=5)
+    recording_summary = store.get_recording_summary(device_name)
     findings = config_validation.findings_for_scope(device_name)
     status = _derive_device_status(enabled, last_poll[0] if last_poll else None, findings, metrics_count)
+    auth_summary = _auth_summary(device_name, auth, status, findings, device_specs, last_poll[0] if last_poll else None)
+    easee_cloud_context = (
+        build_easee_cloud_context(store, device_config)
+        if device_name == "easee"
+        else None
+    )
     return {
         "name": device_name,
         "device_type": device_specs.get("device_type", device_name),
@@ -35,6 +44,7 @@ def build_device_operations_view(
         "auth_type": str(auth.get("type", "none")).lower(),
         "credentials_configured": _credentials_configured(auth),
         "credentials_expectation": _credential_expectation(auth),
+        "auth_summary": auth_summary,
         "last_poll": last_poll[0] if last_poll else None,
         "last_successful_poll": last_success,
         "last_successful_data_read": last_data_read_utc,
@@ -45,11 +55,14 @@ def build_device_operations_view(
         "normalized_metrics_available": metrics_count > 0,
         "normalized_metrics_count": metrics_count,
         "recent_failure_count": recent_failures,
+        "recording_summary": recording_summary,
         "config_findings": findings,
         "mapping_note": _mapping_note(device_name),
         "settings_read_support_state": _support_state(device_specs, "settings_read_support_state"),
         "measurement_read_support_state": _support_state(device_specs, "measurement_read_support_state"),
+        "mapping_state": device_specs.get("mapping_state", _support_state(device_specs, "measurement_read_support_state")),
         "protocol_summary": _protocol_summary(device_specs),
+        "integration_context": easee_cloud_context,
         "specs": device_specs,
     }
 
@@ -112,6 +125,27 @@ def _credential_expectation(auth: dict[str, Any]) -> str:
     return "missing"
 
 
+def _auth_summary(
+    device_name: str,
+    auth: dict[str, Any],
+    collector_status: str,
+    findings: list[Any],
+    device_specs: dict[str, Any],
+    last_poll: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if device_name == "cfos":
+        return summarize_cfos_auth(auth, collector_status, findings, (last_poll or {}).get("details"))
+    if device_name == "kostal":
+        return summarize_kostal_auth(auth, collector_status, str(device_specs.get("protocol", "modbus_tcp")))
+    return {
+        "enabled": bool(auth),
+        "config_state": "unknown",
+        "state": "unknown",
+        "masked": {},
+        "notes": [finding.message for finding in findings if "auth" in finding.key_path],
+    }
+
+
 def _mapping_note(device_name: str) -> str:
     if device_name == "cfos":
         return (
@@ -119,7 +153,10 @@ def _mapping_note(device_name: str) -> str:
             "wallbox metric semantics are still only partially confirmed until real cFos payloads are validated."
         )
     if device_name == "easee":
-        return "Adapter skeleton only. Reachability is real, metric mapping remains intentionally partial."
+        return (
+            "Easee is currently treated as a cloud-linked wallbox behind cFos. "
+            "The local IP may exist, but cFos evidence currently points to charger-ID-based cloud communication."
+        )
     if device_name == "kostal":
         return (
             "Connectivity and byte-order handling are modeled for KOSTAL, but live register addresses and "

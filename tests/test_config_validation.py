@@ -48,3 +48,23 @@ def test_config_validator_flags_non_list_cfos_candidate_paths(sample_config_dict
     sample_config_dict["devices"]["cfos"]["candidate_status_paths"] = "/status"
     result = ConfigValidator().validate(sample_config_dict)
     assert any("candidate_status_paths should be a list" in finding.message for finding in result.findings)
+
+
+def test_config_validator_flags_missing_cfos_default_variants(sample_config_dict):
+    sample_config_dict["devices"]["cfos"]["auth"]["credential_source"] = "default_auto"
+    sample_config_dict["devices"]["cfos"]["auth"]["default_password_variants"] = []
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("default password variant" in finding.message.lower() for finding in result.findings)
+
+
+def test_config_validator_flags_missing_kostal_plant_owner_secret(sample_config_dict):
+    sample_config_dict["devices"]["kostal"]["auth"]["enabled"] = True
+    sample_config_dict["devices"]["kostal"]["auth"]["web_access"]["enabled"] = True
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("plant-owner web credentials" in finding.message for finding in result.findings)
+
+
+def test_config_validator_flags_missing_kostal_transport_auth_credentials(sample_config_dict):
+    sample_config_dict["devices"]["kostal"]["auth"]["transport"]["uses_auth"] = True
+    result = ConfigValidator().validate(sample_config_dict)
+    assert any("transport username or password is missing" in finding.message for finding in result.findings)

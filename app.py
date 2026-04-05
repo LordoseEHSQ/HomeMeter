@@ -12,13 +12,18 @@ from flask import Flask
 from analysis import PlausibilityEngine
 from collectors import CfosCollector, EaseeCollector, KostalCollector
 from collectors.base import BaseCollector
+from services.auth import SECRET_KEYS
+from services.analytics import AnalyticsEngine
 from services.config_validation import ConfigValidator
+from services.config_editor import save_config
 from services.cfos_protocols import CfosProtocolDiagnostics
 from services.database_stats import DatabaseInspector
 from services.device_specs import build_device_specs
 from services.diagnostics import build_device_operations_view
 from services.gap_detection import build_integration_gaps
 from services.health import SystemHealthService
+from services.i18n import DEFAULT_LANGUAGE, resolve_language, translate
+from services.metric_format import format_metric_for_display
 from services.time_monitor import TimeMonitor
 from services.time_utils import format_cell_value, format_timestamp_for_display, load_time_settings
 from storage import SQLiteStore
@@ -33,11 +38,13 @@ class PollingManager:
         collectors: list[BaseCollector],
         store: SQLiteStore,
         plausibility_engine: PlausibilityEngine,
+        analytics_engine: AnalyticsEngine,
         interval_seconds: int,
     ) -> None:
         self.collectors = collectors
         self.store = store
         self.plausibility_engine = plausibility_engine
+        self.analytics_engine = analytics_engine
         self.interval_seconds = interval_seconds
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -86,6 +93,15 @@ class PollingManager:
                     result.http_status,
                     result.error_message,
                 )
+        analytics_result: dict[str, Any] | None = None
+        if cycle_timestamp:
+            analytics_result = self.analytics_engine.process_cycle(cycle_timestamp)
+            LOGGER.info(
+                "Analytics persistence updated (semantic=%s, kpis=%s, bucket=%s)",
+                analytics_result["semantic_metric_count"],
+                analytics_result["kpi_record_count"],
+                analytics_result["rollup_bucket_utc"],
+            )
         if device_names and cycle_timestamp:
             alerts = self.plausibility_engine.run(
                 device_names=device_names,
@@ -171,7 +187,7 @@ def sanitize_config(value: Any) -> Any:
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
         for key, item in value.items():
-            if key.lower() in {"password", "token"} and item:
+            if key.lower() in SECRET_KEYS and item:
                 sanitized[key] = "***masked***"
             else:
                 sanitized[key] = sanitize_config(item)
@@ -186,6 +202,7 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
     storage_config = config.get("storage", {}) or {}
     polling_config = config.get("polling", {}) or {}
     time_settings = load_time_settings(config)
+    analytics_settings = config.get("analytics", {}) or {}
 
     logging.basicConfig(
         level=logging.INFO,
@@ -204,10 +221,12 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
         LOGGER.warning("No enabled collectors configured.")
 
     plausibility_engine = PlausibilityEngine(store=store)
+    analytics_engine = AnalyticsEngine(store=store, settings=analytics_settings)
     polling_manager = PollingManager(
         collectors=collectors,
         store=store,
         plausibility_engine=plausibility_engine,
+        analytics_engine=analytics_engine,
         interval_seconds=int(polling_config.get("interval_seconds", 10)),
     )
     config_validator = ConfigValidator()
@@ -227,6 +246,8 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
     app.config["DB_INSPECTOR"] = db_inspector
     app.config["HEALTH_SERVICE"] = health_service
     app.config["TIME_SETTINGS"] = time_settings
+    app.config["ANALYTICS_SETTINGS"] = analytics_settings
+    app.config["ANALYTICS_SERVICE"] = analytics_engine
     app.config["TIME_MONITOR"] = time_monitor
     app.config["CFOS_PROTOCOL_DIAGNOSTICS"] = cfos_protocol_diagnostics
     app.config["SANITIZE_CONFIG"] = sanitize_config
@@ -244,21 +265,49 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
         key, value = payload
         return format_cell_value(str(key), value, app.config["TIME_SETTINGS"])
 
+    @app.template_filter("format_metric_number")
+    def format_metric_number_filter(payload: tuple[Any, Any] | list[Any]) -> str:
+        value, unit = payload
+        return format_metric_for_display(value, unit)["value"]
+
+    @app.template_filter("format_metric_unit")
+    def format_metric_unit_filter(payload: tuple[Any, Any] | list[Any]) -> str:
+        value, unit = payload
+        return format_metric_for_display(value, unit)["unit"]
+
+    @app.context_processor
+    def inject_i18n_helpers():
+        from flask import session
+
+        current_language = resolve_language(session.get("ui_language", DEFAULT_LANGUAGE))
+        return {
+            "current_language": current_language,
+            "supported_languages": sorted(["de", "en"]),
+            "tr": lambda key: translate(key, current_language),
+        }
+
     register_routes(app)
 
     def refresh_runtime_config() -> dict[str, Any]:
         fresh_config = load_config(app.config["CONFIG_PATH"])
         app.config["CONFIG"] = fresh_config
         app.config["TIME_SETTINGS"] = load_time_settings(fresh_config)
+        app.config["ANALYTICS_SETTINGS"] = fresh_config.get("analytics", {}) or {}
         app.config["TIME_MONITOR"] = TimeMonitor(app.config["TIME_SETTINGS"])
         app.config["CFOS_PROTOCOL_DIAGNOSTICS"] = CfosProtocolDiagnostics()
+        app.config["ANALYTICS_SERVICE"] = AnalyticsEngine(store=store, settings=app.config["ANALYTICS_SETTINGS"])
         refreshed_collectors = create_collectors(fresh_config)
         app.config["DEVICE_NAMES"] = [collector.device_name for collector in refreshed_collectors]
         app.config["POLLING_MANAGER"].replace_collectors(
             refreshed_collectors,
             int((fresh_config.get("polling", {}) or {}).get("interval_seconds", 10)),
         )
+        app.config["POLLING_MANAGER"].analytics_engine = app.config["ANALYTICS_SERVICE"]
         return fresh_config
+
+    def persist_runtime_config(updated_config: dict[str, Any]) -> dict[str, Any]:
+        save_config(app.config["CONFIG_PATH"], updated_config)
+        return refresh_runtime_config()
 
     def build_runtime_snapshot() -> dict[str, Any]:
         active_config = app.config["CONFIG"]
@@ -316,6 +365,7 @@ def create_app(config_path: str = "config.yaml", start_polling: bool = True) -> 
         ]
 
     app.config["REFRESH_RUNTIME_CONFIG"] = refresh_runtime_config
+    app.config["PERSIST_RUNTIME_CONFIG"] = persist_runtime_config
     app.config["BUILD_RUNTIME_SNAPSHOT"] = build_runtime_snapshot
     app.config["BUILD_VALIDATION_RESULT"] = build_validation_result
     app.config["BUILD_DEVICE_SPECS"] = build_device_specs_snapshot

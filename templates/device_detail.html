@@ -15,8 +15,10 @@
         <dd>{{ operation.host }}{% if operation.port %}:{{ operation.port }}{% endif %}</dd>
         <dt>Protocols</dt>
         <dd>{{ operation.protocol_summary }}</dd>
-        <dt>Credentials</dt>
-        <dd>{{ operation.auth_type }} / {{ operation.credentials_expectation }}</dd>
+        <dt>Auth config</dt>
+        <dd>{{ operation.auth_summary.config_state }}</dd>
+        <dt>Auth state</dt>
+        <dd>{{ operation.auth_summary.state }}</dd>
         <dt>Last poll</dt>
         <dd>{{ device.last_poll.timestamp_utc|format_ts_detail if device.last_poll else 'No polls yet' }}</dd>
         <dt>Last poll status</dt>
@@ -29,6 +31,15 @@
         <dd>{{ operation.settings_read_support_state }}</dd>
         <dt>Measurement-read support</dt>
         <dd>{{ operation.measurement_read_support_state }}</dd>
+        <dt>Recording state</dt>
+        <dd>{{ operation.recording_summary.status }}</dd>
+        <dt>Recording counts</dt>
+        <dd>
+            polls={{ operation.recording_summary.poll_event_count }},
+            raw={{ operation.recording_summary.raw_payload_count }},
+            normalized={{ operation.recording_summary.normalized_measurement_count }},
+            raw_numeric={{ operation.recording_summary.raw_numeric_measurement_count }}
+        </dd>
     </dl>
     <p class="muted">{{ operation.mapping_note }}</p>
     <form method="post" action="{{ url_for('web.test_connection', device_name=device.name) }}">
@@ -36,14 +47,88 @@
     </form>
 </section>
 
+{% if device.name == 'easee' and operation.integration_context %}
+<section class="panel">
+    <h3>Easee Cloud Integration Diagnostics</h3>
+    <dl class="meta-grid">
+        <dt>Transport mode</dt>
+        <dd>{{ operation.integration_context.transport_mode }}</dd>
+        <dt>Charger ID</dt>
+        <dd>{{ operation.integration_context.charger_id or 'unknown' }}</dd>
+        <dt>cFos device ID</dt>
+        <dd>{{ operation.integration_context.cfos_device_id or 'unknown' }}</dd>
+        <dt>cFos device type</dt>
+        <dd>{{ operation.integration_context.cfos_device_type or 'unknown' }}</dd>
+        <dt>Configured cFos address</dt>
+        <dd>{{ operation.integration_context.cfos_address or 'unknown' }}</dd>
+        <dt>Local IP</dt>
+        <dd>{{ operation.integration_context.local_ip or 'not configured' }}</dd>
+        <dt>Local IP role</dt>
+        <dd>{{ operation.integration_context.local_ip_role }}</dd>
+        <dt>Cloud auth state</dt>
+        <dd>{{ operation.integration_context.cloud_auth_state }}</dd>
+        <dt>Cloud auth error</dt>
+        <dd>{{ operation.integration_context.cloud_auth_error or 'none' }}</dd>
+        <dt>Operator hint</dt>
+        <dd>{{ operation.integration_context.operator_hint or 'none' }}</dd>
+        <dt>Summary</dt>
+        <dd>{{ operation.integration_context.communication_summary }}</dd>
+    </dl>
+</section>
+{% endif %}
+
 <section class="panel">
     <h3>Device Specs</h3>
     <pre>{{ device_specs | tojson(indent=2) }}</pre>
 </section>
 
+<section class="panel">
+    <h3>Auth And Recording Context</h3>
+    <dl class="meta-grid">
+        {% if device.name == 'kostal' %}
+        <dt>Role selected</dt>
+        <dd>{{ operation.auth_summary.role }}</dd>
+        <dt>Web access state</dt>
+        <dd>{{ operation.auth_summary.web_access_state }}</dd>
+        <dt>Transport auth state</dt>
+        <dd>{{ operation.auth_summary.transport_auth_state }}</dd>
+        <dt>Transport uses auth</dt>
+        <dd>{{ 'yes' if operation.auth_summary.transport_uses_auth else 'no' }}</dd>
+        <dt>Role context note</dt>
+        <dd>{{ operation.auth_summary.role_context_note }}</dd>
+        {% else %}
+        <dt>Auth type</dt>
+        <dd>{{ operation.auth_summary.auth_type }}</dd>
+        <dt>Credentials source</dt>
+        <dd>{{ operation.auth_summary.credentials_source }}</dd>
+        <dt>Auth configured</dt>
+        <dd>{{ operation.auth_summary.config_state }}</dd>
+        <dt>Auth state</dt>
+        <dd>{{ operation.auth_summary.state }}</dd>
+        <dt>Auth test result</dt>
+        <dd>{{ operation.auth_summary.auth_test_result }}</dd>
+        <dt>Worked variant</dt>
+        <dd>{{ operation.auth_summary.worked_variant or 'not confirmed yet' }}</dd>
+        {% endif %}
+        <dt>Masked secret state</dt>
+        <dd>
+            {% for key, value in operation.auth_summary.masked.items() %}
+            {{ key }}={{ value }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </dd>
+        <dt>Recording note</dt>
+        <dd>{{ operation.recording_summary.message }}</dd>
+        {% if operation.auth_summary.security_warning %}
+        <dt>Security recommendation</dt>
+        <dd>{{ operation.auth_summary.security_warning }}</dd>
+        {% endif %}
+    </dl>
+</section>
+
 {% if cfos_protocol_statuses %}
 <section class="panel">
     <h3>cFos Protocol Surface Diagnostics</h3>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -84,12 +169,14 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </section>
 {% endif %}
 
 <section class="panel">
     <h3>Recent Polls</h3>
     {% if device.poll_history %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -109,11 +196,20 @@
                 <td>{{ 'yes' if event.success else 'no' }}</td>
                 <td>{{ event.duration_ms }} ms</td>
                 <td>{{ event.http_status if event.http_status is not none else '-' }}</td>
-                <td>{{ event.error_message or '-' }}</td>
+                <td>
+                    {{ event.error_message or '-' }}
+                    {% if event.details and event.details.selected_path %}
+                    <div class="tiny">path={{ event.details.selected_path }}</div>
+                    {% endif %}
+                    {% if event.details and event.details.transport_state %}
+                    <div class="tiny">transport={{ event.details.transport_state }}, decode={{ event.details.decode_state }}</div>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No poll events yet.</p>
     {% endif %}
@@ -122,6 +218,7 @@
 <section class="panel">
     <h3>Recent Measurements</h3>
     {% if device.measurements %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -137,13 +234,14 @@
             <tr>
                 <td>{{ measurement.timestamp_utc|format_ts_detail }}</td>
                 <td>{{ measurement.metric_name }}</td>
-                <td>{{ "%.2f"|format(measurement.metric_value) }}</td>
-                <td>{{ measurement.unit or '-' }}</td>
+                <td>{{ (measurement.metric_value, measurement.unit)|format_metric_number }}</td>
+                <td>{{ (measurement.metric_value, measurement.unit)|format_metric_unit }}</td>
                 <td>{{ measurement.source_type }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No measurements stored yet.</p>
     {% endif %}
@@ -154,11 +252,183 @@
     {% if device.raw_payload %}
     <p><strong>Timestamp:</strong> {{ device.raw_payload.timestamp_utc|format_ts_detail }}</p>
     <p><strong>Status:</strong> {{ device.raw_payload.status }}</p>
+    {% if device.raw_payload.details %}
+    <dl class="meta-grid">
+        {% if device.name == 'cfos' %}
+        <dt>Path used</dt>
+        <dd>{{ device.raw_payload.details.selected_path or 'unknown' }}</dd>
+        <dt>Payload format</dt>
+        <dd>{{ device.raw_payload.details.payload_format or 'unknown' }}</dd>
+        <dt>Settings visibility</dt>
+        <dd>{{ device.raw_payload.details.settings_visibility or 'unknown' }}</dd>
+        <dt>Measurement visibility</dt>
+        <dd>{{ device.raw_payload.details.measurement_visibility or 'unknown' }}</dd>
+        <dt>Numeric fields</dt>
+        <dd>{{ device.raw_payload.details.numeric_field_count or 0 }}</dd>
+        <dt>Auth source</dt>
+        <dd>{{ device.raw_payload.details.credentials_source or 'unknown' }}</dd>
+        <dt>Auth variant used</dt>
+        <dd>{{ device.raw_payload.details.auth_variant_used or 'unknown' }}</dd>
+        {% elif device.name == 'kostal' %}
+        <dt>Transport state</dt>
+        <dd>{{ device.raw_payload.details.transport_state or 'unknown' }}</dd>
+        <dt>Protocol response</dt>
+        <dd>{{ device.raw_payload.details.protocol_response_state or 'unknown' }}</dd>
+        <dt>Decode state</dt>
+        <dd>{{ device.raw_payload.details.decode_state or 'unknown' }}</dd>
+        <dt>Mapping status</dt>
+        <dd>{{ device.raw_payload.details.mapping_status or 'unknown' }}</dd>
+        {% endif %}
+    </dl>
+    {% endif %}
     <pre>{{ device.raw_payload.raw_payload }}</pre>
     {% else %}
     <p class="muted">No raw payload captured yet.</p>
     {% endif %}
 </section>
+
+{% if device.name == 'cfos' and device.raw_payload and device.raw_payload.details and (device.raw_payload.details.likely_useful_candidates_preview or device.raw_payload.details.unmapped_numeric_fields_preview) %}
+<section class="panel">
+    <h3>cFos Likely Useful Numeric Candidates</h3>
+    {% if device.raw_payload.details.likely_useful_candidates_preview %}
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Value</th>
+                <th>Unit guess</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in device.raw_payload.details.likely_useful_candidates_preview %}
+            <tr>
+                <td>{{ item.field }}</td>
+                <td>{{ item.value }}</td>
+                <td>{{ item.unit_guess or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">No likely-useful unmapped numeric fields were detected in the latest payload.</p>
+    {% endif %}
+</section>
+
+{% if device.raw_payload.details.unmapped_numeric_fields_preview %}
+<section class="panel">
+    <h3>cFos Unmapped Numeric Field Preview</h3>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in device.raw_payload.details.unmapped_numeric_fields_preview %}
+            <tr>
+                <td>{{ item.field }}</td>
+                <td>{{ item.value }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+{% endif %}
+
+{% if device.name == 'kostal' and device.last_poll and device.last_poll.details and device.last_poll.details.mapping_profile %}
+<section class="panel">
+    <h3>KOSTAL SunSpec Discovery</h3>
+    {% if device.last_poll.details.discovered_models %}
+    <table>
+        <thead>
+            <tr>
+                <th>Model ID</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Length</th>
+                <th>Support state</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for model in device.last_poll.details.discovered_models %}
+            <tr>
+                <td>{{ model.model_id }}</td>
+                <td>{{ model.start_register }}</td>
+                <td>{{ model.end_register }}</td>
+                <td>{{ model.model_length }}</td>
+                <td>{{ model.decoder_support_state }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No SunSpec models recorded yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>KOSTAL Mapping Profile</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>State</th>
+                <th>Confidence</th>
+                <th>Note</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in device.last_poll.details.mapping_profile.candidate_measurements %}
+            <tr>
+                <td>{{ item.metric_name }}</td>
+                <td>{{ item.mapping_state }}</td>
+                <td>{{ item.confidence }}</td>
+                <td>{{ item.note }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+{% if device.name == 'kostal' and device.last_poll and device.last_poll.details and device.last_poll.details.unsupported_models %}
+<section class="panel">
+    <h3>KOSTAL Discovered But Unsupported Models</h3>
+    <p class="muted">{{ device.last_poll.details.unsupported_models|join(', ') }}</p>
+</section>
+{% endif %}
+
+{% if device.name == 'kostal' and device.measurements %}
+<section class="panel">
+    <h3>KOSTAL Verified And Tentative Metrics</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Unit</th>
+                <th>Classification</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in device.measurements if measurement.source_type in ['verified', 'tentative'] %}
+            <tr>
+                <td>{{ measurement.metric_name }}</td>
+                <td>{{ (measurement.metric_value, measurement.unit)|format_metric_number }}</td>
+                <td>{{ (measurement.metric_value, measurement.unit)|format_metric_unit }}</td>
+                <td>{{ measurement.source_type }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
 
 <section class="panel">
     <h3>Recent Errors</h3>

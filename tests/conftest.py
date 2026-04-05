@@ -26,6 +26,11 @@ def sample_config_dict(tmp_path: Path) -> dict:
                 "drift_warning_seconds": 2,
             },
         },
+        "analytics": {
+            "default_window": "24h",
+            "chart_refresh_seconds": 30,
+            "rollup_retention_days": 180,
+        },
         "devices": {
             "cfos": {
                 "enabled": True,
@@ -34,7 +39,15 @@ def sample_config_dict(tmp_path: Path) -> dict:
                 "status_path": "/",
                 "candidate_status_paths": ["/", "/status", "/api/status"],
                 "preferred_protocols": ["http", "mqtt"],
-                "auth": {"type": "basic", "username": "admin", "password": "secret"},
+                "auth": {
+                    "enabled": True,
+                    "type": "basic",
+                    "credential_source": "custom",
+                    "default_username": "admin",
+                    "default_password_variants": ["", "1234abcd"],
+                    "username": "admin",
+                    "password": "secret",
+                },
                 "protocols": {
                     "http": {"enabled": True},
                     "mqtt": {"enabled": False, "host": "127.0.0.1", "port": 1883},
@@ -60,7 +73,19 @@ def sample_config_dict(tmp_path: Path) -> dict:
                 "unit_id": 71,
                 "modbus_byte_order": "CDAB",
                 "sunspec_byte_order": "ABCD",
-                "auth": {"type": "none"},
+                "auth": {
+                    "enabled": False,
+                    "role": "plant_owner",
+                    "web_access": {
+                        "enabled": False,
+                        "plant_owner_password": "",
+                        "installer_service_code": "",
+                        "installer_master_key": "",
+                        "username": "",
+                        "password": "",
+                    },
+                    "transport": {"uses_auth": False, "username": "", "password": ""},
+                },
                 "timeout_seconds": 5,
             },
         },
@@ -103,6 +128,7 @@ def insert_poll_result(
     timestamp_utc: str = "2026-04-05T12:00:00+00:00",
     metric_name: str | None = "grid_power_w",
     metric_value: float = 123.0,
+    source_type: str = "test",
 ) -> CollectorResult:
     measurements = []
     if metric_name is not None:
@@ -111,12 +137,13 @@ def insert_poll_result(
                 metric_name=metric_name,
                 metric_value=metric_value,
                 unit="W",
+                source_type=source_type,
                 raw_payload='{"mock": true}',
             )
         )
     result = CollectorResult(
         device_name=device_name,
-        source_type="test",
+        source_type=source_type,
         status=status,
         success=success,
         timestamp_utc=timestamp_utc,

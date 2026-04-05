@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block page_class %}page-analytics{% endblock %}
+
+{% block content %}
+<section class="hero analytics-hero">
+    <div class="hero-copy">
+        <p class="eyebrow">{{ tr('analytics.hero.eyebrow') }}</p>
+        <h2>{{ tr('analytics.hero.title') }}</h2>
+        <p class="muted">{{ tr('analytics.hero.subtitle') }}</p>
+    </div>
+    <div class="hero-status">
+        <span class="badge status-{{ analytics.coverage.status }}">{{ analytics.coverage.status }}</span>
+        <dl class="compact-stats">
+            <div><dt>{{ tr('analytics.header.window') }}</dt><dd>{{ analytics.window_label }}</dd></div>
+            <div><dt>{{ tr('analytics.header.timezone') }}</dt><dd>{{ time_settings.display_timezone }}</dd></div>
+            <div><dt>{{ tr('analytics.header.semantic_metrics') }}</dt><dd>{{ analytics.persistence_status.semantic_metric_count }}</dd></div>
+            <div><dt>{{ tr('analytics.header.rollups') }}</dt><dd>{{ analytics.persistence_status.rollup_count }}</dd></div>
+            <div><dt>{{ tr('analytics.header.kpi_summaries') }}</dt><dd>{{ analytics.persistence_status.kpi_summary_count }}</dd></div>
+        </dl>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="section-head section-head-wrap">
+        <div>
+            <p class="eyebrow">{{ tr('analytics.section.range.title') }}</p>
+            <h2>{{ tr('analytics.section.range.title') }}</h2>
+            <p class="muted">{{ tr('analytics.section.range.subtitle') }}</p>
+        </div>
+        <span class="badge status-info">{{ tr('analytics.refresh.badge') }}</span>
+    </div>
+    <div class="toolbar-actions">
+        {% for option in analytics.window_options %}
+        <a class="button {% if option.key == analytics.selected_window %}button-primary{% endif %}" href="{{ url_for('web.analytics', window=option.key) }}">{{ option.label }}</a>
+        {% endfor %}
+    </div>
+    <div class="toolbar-meta">
+        <div class="toolbar-chip"><strong>{{ tr('analytics.range.window_start') }}:</strong> {{ analytics.window_start_utc|format_ts_detail }}</div>
+        <div class="toolbar-chip"><strong>{{ tr('analytics.range.window_end') }}:</strong> {{ analytics.window_end_utc|format_ts_detail }}</div>
+        <div class="toolbar-chip"><strong>{{ tr('analytics.range.refresh') }}:</strong> {{ analytics.refresh_seconds }} {{ tr('common.seconds_short') }}</div>
+    </div>
+    <p class="muted">{{ analytics.coverage.message }}</p>
+    <p class="tiny">{{ tr('analytics.range.live_note') }}</p>
+</section>
+
+<div
+    id="analytics-live"
+    class="analytics-live"
+    data-refresh-url="{{ url_for('web.analytics_partial', window=analytics.selected_window) }}"
+    data-refresh-seconds="{{ analytics.refresh_seconds }}"
+>
+    {% include "partials/analytics_live.html" %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    const container = document.getElementById("analytics-live");
+    if (!container) return;
+    const refreshUrl = container.dataset.refreshUrl;
+    const refreshSeconds = Number(container.dataset.refreshSeconds || "30");
+    if (!refreshUrl || !Number.isFinite(refreshSeconds) || refreshSeconds <= 0) return;
+
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(async () => {
+            try {
+                const response = await fetch(refreshUrl, {
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    credentials: "same-origin"
+                });
+                if (!response.ok) {
+                    scheduleRefresh();
+                    return;
+                }
+                container.innerHTML = await response.text();
+            } catch (error) {
+                console.warn("Analytics refresh failed", error);
+            } finally {
+                scheduleRefresh();
+            }
+        }, refreshSeconds * 1000);
+    };
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            window.clearTimeout(refreshTimer);
+            return;
+        }
+        scheduleRefresh();
+    });
+
+    scheduleRefresh();
+})();
+</script>
+{% endblock %}

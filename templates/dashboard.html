@@ -31,6 +31,33 @@
 
 <section class="panel">
     <div class="section-head">
+        <div>
+            <p class="eyebrow">Analytics</p>
+            <h2>Persisted KPI snapshot</h2>
+        </div>
+        <a href="{{ url_for('web.analytics') }}">Open KPI dashboard</a>
+    </div>
+    <div class="stats-grid">
+        {% for card in analytics.cards %}
+        <article class="stat-card">
+            <p class="eyebrow">{{ card.label }}</p>
+            <h3>
+                {% if card.value is none %}
+                -
+                {% elif card.unit == '%' %}
+                {{ "%.1f"|format(card.value) }}%
+                {% else %}
+                {{ (card.value, card.unit)|format_metric_number }}
+                {% endif %}
+            </h3>
+            <p class="tiny">{{ card.classification }} / {{ card.confidence_state }} / {{ "%.0f"|format(card.source_coverage * 100) }}% coverage</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel">
+    <div class="section-head">
         <h2>Devices</h2>
         <a href="{{ url_for('web.settings') }}">Open operations view</a>
     </div>
@@ -59,21 +86,36 @@
                 <dt>Response time</dt>
                 <dd>{{ device.response_time_ms ~ ' ms' if device.response_time_ms is not none else 'n/a' }}</dd>
                 <dt>Auth</dt>
-                <dd>{{ device.auth_type }} / {{ device.credentials_expectation }}</dd>
+                <dd>{{ device.auth_summary.config_state }} / {{ device.auth_summary.state }}</dd>
+                {% if device.name == 'cfos' %}
+                <dt>Cred source</dt>
+                <dd>{{ device.auth_summary.credentials_source }}</dd>
+                {% endif %}
                 <dt>Settings support</dt>
                 <dd>{{ device.settings_read_support_state }}</dd>
                 <dt>Measurement support</dt>
                 <dd>{{ device.measurement_read_support_state }}</dd>
+                <dt>Recording</dt>
+                <dd>{{ device.recording_summary.status }}</dd>
                 <dt>Raw payload</dt>
                 <dd>{{ 'available' if device.raw_payload_available else 'none yet' }}</dd>
                 <dt>Metrics</dt>
                 <dd>{{ device.normalized_metrics_count }}</dd>
                 <dt>Last error</dt>
                 <dd>{{ device.last_error or 'None' }}</dd>
+                {% if device.integration_context and device.integration_context.transport_mode != 'unknown' %}
+                <dt>Integration</dt>
+                <dd>{{ device.integration_context.transport_mode }}</dd>
+                <dt>Primary ID</dt>
+                <dd>{{ device.integration_context.charger_id or device.integration_context.cfos_address or 'n/a' }}</dd>
+                <dt>Local IP role</dt>
+                <dd>{{ device.integration_context.local_ip_role }}</dd>
+                {% endif %}
             </dl>
             {% set dashboard_device = (dashboard.devices | selectattr('name', 'equalto', device.name) | list | first) %}
             <h4>Latest values</h4>
             {% if dashboard_device and dashboard_device.latest_measurements %}
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -86,15 +128,23 @@
                     {% for measurement in dashboard_device.latest_measurements %}
                     <tr>
                         <td>{{ measurement.metric_name }}</td>
-                        <td>{{ "%.2f"|format(measurement.metric_value) }}</td>
-                        <td>{{ measurement.unit or '-' }}</td>
+                        <td>{{ (measurement.metric_value, measurement.unit)|format_metric_number }}</td>
+                        <td>{{ (measurement.metric_value, measurement.unit)|format_metric_unit }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% else %}
             <p class="muted">No normalized measurements stored yet.</p>
             {% endif %}
+            {% if device.auth_summary.security_warning %}
+            <p class="tiny">{{ device.auth_summary.security_warning }}</p>
+            {% endif %}
+            {% if device.integration_context and device.integration_context.cloud_auth_error %}
+            <p class="tiny">Easee cloud auth: {{ device.integration_context.cloud_auth_state }} ({{ device.integration_context.cloud_auth_error }})</p>
+            {% endif %}
+            <p class="tiny">{{ device.recording_summary.message }}</p>
             <p class="tiny">{{ device.mapping_note }}</p>
         </article>
         {% endfor %}
@@ -104,6 +154,7 @@
 <section class="panel">
     <h2>Integration Gaps And Opportunities</h2>
     {% if integration_gaps %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -124,6 +175,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No integration gaps detected right now.</p>
     {% endif %}
@@ -135,6 +187,7 @@
         <a href="{{ url_for('web.alerts') }}">Open all alerts</a>
     </div>
     {% if dashboard.recent_alerts %}
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -157,6 +210,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No alerts stored yet.</p>
     {% endif %}

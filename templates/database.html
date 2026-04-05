@@ -21,6 +21,12 @@
         <dd>{{ database_report.storage_activity.message }}</dd>
         <dt>Raw payload rows</dt>
         <dd>{{ database_report.raw_payload_rows }}</dd>
+        <dt>Latest semantic metric</dt>
+        <dd>{{ database_report.analytics_status.latest_semantic_metric_utc|format_ts_detail if database_report.analytics_status.latest_semantic_metric_utc else 'none' }}</dd>
+        <dt>Latest minute rollup</dt>
+        <dd>{{ database_report.analytics_status.latest_rollup_utc|format_ts_detail if database_report.analytics_status.latest_rollup_utc else 'none' }}</dd>
+        <dt>Latest KPI summary</dt>
+        <dd>{{ database_report.analytics_status.latest_kpi_summary_utc|format_ts_detail if database_report.analytics_status.latest_kpi_summary_utc else 'none' }}</dd>
     </dl>
 </section>
 
@@ -43,6 +49,50 @@
         <h3>{{ 'yes' if database_report.device_measurement_presence.kostal else 'no' }}</h3>
         <p class="tiny">Any KOSTAL normalized measurements stored</p>
     </article>
+</section>
+
+<section class="panel">
+    <h2>Per-device recording status</h2>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Poll events</th>
+                <th>Raw payloads</th>
+                <th>Normalized values</th>
+                <th>Verified</th>
+                <th>Tentative</th>
+                <th>Likely candidate</th>
+                <th>Unmapped numeric</th>
+                <th>Raw numeric values</th>
+                <th>Last poll</th>
+                <th>Last measurement</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device_name, summary in database_report.per_device_recording.items() %}
+            <tr>
+                <td>{{ device_name }}</td>
+                <td><span class="badge status-{{ summary.status }}">{{ summary.status }}</span></td>
+                <td>{{ summary.poll_event_count }}</td>
+                <td>{{ summary.raw_payload_count }}</td>
+                <td>{{ summary.normalized_measurement_count }}</td>
+                <td>{{ summary.verified_measurement_count }}</td>
+                <td>{{ summary.tentative_measurement_count }}</td>
+                <td>{{ summary.likely_candidate_measurement_count }}</td>
+                <td>{{ summary.unmapped_numeric_measurement_count }}</td>
+                <td>{{ summary.raw_numeric_measurement_count }}</td>
+                <td>{{ summary.last_poll_timestamp_utc|format_ts_detail if summary.last_poll_timestamp_utc else 'n/a' }}</td>
+                <td>{{ summary.last_measurement_timestamp_utc|format_ts_detail if summary.last_measurement_timestamp_utc else 'n/a' }}</td>
+                <td>{{ summary.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
 </section>
 
 {% for table_name, rows in database_report.latest_rows.items() %}

@@ -185,50 +185,53 @@ class ConfigValidator:
                         "Unexpected KOSTAL SunSpec byte order value.",
                     )
                 )
+            self._validate_kostal_auth(device_config, findings)
         if device_key == "cfos":
             self._validate_cfos_protocols(device_config, findings)
+            self._validate_cfos_auth(device_config, findings)
 
-        auth_type = str(auth.get("type", "none")).lower()
-        if auth_type not in {"none", "basic", "bearer"}:
-            findings.append(
-                self._finding(
-                    "warning",
-                    device_key,
-                    f"devices.{device_key}.auth.type",
-                    f"Unknown auth type '{auth_type}'. Expected none, basic or bearer.",
-                )
-            )
-
-        if auth_type == "basic":
-            if not auth.get("username") or not auth.get("password"):
+        if device_key not in {"kostal", "cfos"}:
+            auth_type = str(auth.get("type", "none")).lower()
+            if auth_type not in {"none", "basic", "bearer"}:
                 findings.append(
                     self._finding(
                         "warning",
                         device_key,
-                        f"devices.{device_key}.auth",
-                        "Basic auth selected but username or password is missing.",
+                        f"devices.{device_key}.auth.type",
+                        f"Unknown auth type '{auth_type}'. Expected none, basic or bearer.",
                     )
                 )
-        elif auth_type == "bearer" and not auth.get("token"):
-            findings.append(
-                self._finding(
-                    "warning",
-                    device_key,
-                    f"devices.{device_key}.auth.token",
-                    "Bearer auth selected but token is missing.",
-                )
-            )
-        elif auth_type == "none":
-            findings.append(
-                self._finding(
-                    "info",
-                    device_key,
-                    f"devices.{device_key}.auth.type",
-                    "No credentials configured. This may be correct, or auth may still be required by the real device.",
-                )
-            )
 
-        if not device_config.get("status_path"):
+            if auth_type == "basic":
+                if not auth.get("username") or not auth.get("password"):
+                    findings.append(
+                        self._finding(
+                            "warning",
+                            device_key,
+                            f"devices.{device_key}.auth",
+                            "Basic auth selected but username or password is missing.",
+                        )
+                    )
+            elif auth_type == "bearer" and not auth.get("token"):
+                findings.append(
+                    self._finding(
+                        "warning",
+                        device_key,
+                        f"devices.{device_key}.auth.token",
+                        "Bearer auth selected but token is missing.",
+                    )
+                )
+            elif auth_type == "none":
+                findings.append(
+                    self._finding(
+                        "info",
+                        device_key,
+                        f"devices.{device_key}.auth.type",
+                        "No credentials configured. This may be correct, or auth may still be required by the real device.",
+                    )
+                )
+
+        if device_key in {"cfos", "easee"} and not device_config.get("status_path"):
             findings.append(
                 self._finding(
                     "warning",
@@ -292,6 +295,61 @@ class ConfigValidator:
                         )
                     )
 
+    def _validate_cfos_auth(self, device_config: dict[str, Any], findings: list[ConfigFinding]) -> None:
+        auth = device_config.get("auth", {}) or {}
+        auth_type = str(auth.get("type", "none")).lower()
+        if auth_type not in {"none", "basic", "bearer"}:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "cfos",
+                    "devices.cfos.auth.type",
+                    f"Unknown cFos auth type '{auth_type}'. Expected none, basic or bearer.",
+                )
+            )
+            return
+        if auth_type == "basic":
+            credential_source = str(auth.get("credential_source", "custom")).lower()
+            if credential_source not in {"custom", "default_auto"}:
+                findings.append(
+                    self._finding(
+                        "warning",
+                        "cfos",
+                        "devices.cfos.auth.credential_source",
+                        "cFos credential_source should be custom or default_auto.",
+                    )
+                )
+            if credential_source == "custom":
+                if not auth.get("username") or auth.get("password") in {None, ""}:
+                    findings.append(
+                        self._finding(
+                            "warning",
+                            "cfos",
+                            "devices.cfos.auth",
+                            "Basic auth selected but username or password is missing.",
+                        )
+                    )
+            if credential_source == "default_auto":
+                variants = auth.get("default_password_variants", [])
+                if not isinstance(variants, list) or not variants:
+                    findings.append(
+                        self._finding(
+                            "warning",
+                            "cfos",
+                            "devices.cfos.auth.default_password_variants",
+                            "cFos default_auto auth should define at least one default password variant.",
+                        )
+                    )
+        elif auth_type == "bearer" and not auth.get("token"):
+            findings.append(
+                self._finding(
+                    "warning",
+                    "cfos",
+                    "devices.cfos.auth.token",
+                    "cFos bearer auth is selected but token is missing.",
+                )
+            )
+
     def _validate_time_settings(self, ntp_config: dict[str, Any], findings: list[ConfigFinding]) -> None:
         enabled = bool(ntp_config.get("enabled", False))
         servers = ntp_config.get("servers", []) or []
@@ -312,6 +370,78 @@ class ConfigValidator:
                     "time",
                     "time.ntp.servers",
                     "Reference time checking is enabled but no NTP servers are configured.",
+                )
+            )
+
+    def _validate_kostal_auth(self, device_config: dict[str, Any], findings: list[ConfigFinding]) -> None:
+        auth = device_config.get("auth", {}) or {}
+        if auth and not isinstance(auth, dict):
+            findings.append(self._finding("error", "kostal", "devices.kostal.auth", "KOSTAL auth must be a mapping."))
+            return
+        enabled = bool(auth.get("enabled", False))
+        role = str(auth.get("role", "plant_owner")).lower()
+        if role not in {"plant_owner", "installer"}:
+            findings.append(
+                self._finding(
+                    "warning",
+                    "kostal",
+                    "devices.kostal.auth.role",
+                    "KOSTAL auth role should be plant_owner or installer.",
+                )
+            )
+        web_access = auth.get("web_access", {}) or {}
+        transport = auth.get("transport", {}) or {}
+        if web_access and not isinstance(web_access, dict):
+            findings.append(
+                self._finding("error", "kostal", "devices.kostal.auth.web_access", "KOSTAL web_access must be a mapping.")
+            )
+            web_access = {}
+        if transport and not isinstance(transport, dict):
+            findings.append(
+                self._finding("error", "kostal", "devices.kostal.auth.transport", "KOSTAL transport auth must be a mapping.")
+            )
+            transport = {}
+        web_enabled = bool(web_access.get("enabled", enabled))
+        if web_enabled and role == "plant_owner":
+            if not (web_access.get("plant_owner_password") or (web_access.get("username") and web_access.get("password"))):
+                findings.append(
+                    self._finding(
+                        "warning",
+                        "kostal",
+                        "devices.kostal.auth.web_access",
+                        "KOSTAL plant_owner role is selected but no plant-owner web credentials are configured.",
+                    )
+                )
+        if web_enabled and role == "installer":
+            if not (
+                web_access.get("installer_service_code")
+                or web_access.get("installer_master_key")
+                or (web_access.get("username") and web_access.get("password"))
+            ):
+                findings.append(
+                    self._finding(
+                        "warning",
+                        "kostal",
+                        "devices.kostal.auth.web_access",
+                        "KOSTAL installer role is selected but no installer web credentials/service code/master key are configured.",
+                    )
+                )
+        if bool(transport.get("uses_auth", False)) and not (transport.get("username") and transport.get("password")):
+            findings.append(
+                self._finding(
+                    "warning",
+                    "kostal",
+                    "devices.kostal.auth.transport",
+                    "KOSTAL transport auth is enabled but transport username or password is missing.",
+                )
+            )
+        if not enabled and not bool(transport.get("uses_auth", False)):
+            findings.append(
+                self._finding(
+                    "info",
+                    "kostal",
+                    "devices.kostal.auth",
+                    "KOSTAL auth is currently modeled for web/settings visibility only; the active Modbus/SunSpec transport may not require auth.",
                 )
             )
 

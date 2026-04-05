@@ -1,3 +1,3 @@
-from .sqlite_store import SQLiteStore
+from .sqlite_store import KPIRecord, MinuteRollupRecord, SQLiteStore, SemanticMetricRecord
 
-__all__ = ["SQLiteStore"]
+__all__ = ["SQLiteStore", "SemanticMetricRecord", "MinuteRollupRecord", "KPIRecord"]
